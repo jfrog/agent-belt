@@ -80,6 +80,27 @@ jobs:
         # Catches the rare case where a tag was created on a non-main commit
         # by hand and ``hatch-vcs`` resolves to something else (e.g. a stale
         # cached version). Hard-fail before we publish anything.
+        env:
+          # Override hatch-vcs's ``git describe`` resolution with the version
+          # parsed from the tag that actually triggered this workflow. When
+          # multiple ``v*`` tags point at the same commit (typical: an rc tag
+          # rehearsed in §2.8 followed by a strict tag cut from the same SHA),
+          # ``git describe`` resolution is non-deterministic across git and
+          # hatch-vcs versions, and the build can pick the rc, producing a
+          # wheel whose version fails the assertion below.
+          #
+          # The global ``SETUPTOOLS_SCM_PRETEND_VERSION`` is used rather than
+          # the per-project ``SETUPTOOLS_SCM_PRETEND_VERSION_FOR_AGENT_BELT``
+          # because hatch-vcs invokes ``setuptools_scm.get_version()`` without
+          # passing ``dist_name``, so the per-project env-var lookup never
+          # fires. The global form is the canonical CI escape hatch documented
+          # by setuptools-scm and used by ruff, uv, and hatch's own release
+          # workflows.
+          #
+          # The wheel-version assertion below stays as defense in depth: it
+          # now validates the build did what we told it to, rather than
+          # arbitrating between competing tag resolutions.
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ needs.classify-tag.outputs.version }}
         run: |
           uv sync --locked
           uv build
