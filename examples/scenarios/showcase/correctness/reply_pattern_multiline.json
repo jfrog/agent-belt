@@ -1,0 +1,19 @@
+{
+  "name": "reply_pattern_multiline",
+  "description": "Exercises the ``(?m)`` opt-in for ``reply_pattern``. Default semantics: ``re.search`` with ``re.IGNORECASE``; ``^`` and ``$`` anchor to the whole reply. Inline ``(?m)`` switches each pattern to multiline mode so ``^``/``$`` anchor to each line. Patterns compile through ``belt._regex_policy.compile_user_regex`` (see SCORING.md \u00a71.3).",
+  "tags": ["showcase", "correctness", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Reply with EXACTLY three lines, in this format, nothing else:\nORDER-001 shipped\nORDER-002 pending\nORDER-003 delivered",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "reply_pattern": [
+          "(?m)^ORDER-001 shipped[ \\t]*$",
+          "(?m)^ORDER-002 pending[ \\t]*$",
+          "(?m)^ORDER-003 delivered[ \\t]*$"
+        ]
+      }
+    }
+  ]
+}

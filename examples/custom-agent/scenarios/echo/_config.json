@@ -1,0 +1,4 @@
+{
+  "agent": "echo",
+  "default_tags": ["example", "echo"]
+}

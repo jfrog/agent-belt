@@ -1,0 +1,37 @@
+{
+  "name": "slash_command",
+  "description": "Proves the workspace-provisioned slash command at `.claude/commands/check-order.md` was loaded and executed (not treated as plain text). The command file mandates three things: (a) call `mcp__orders_db__get_order`, (b) reply in strict `ORDER|<id>|<customer>|<status>|<tracking>` format on a single line with NO preamble, (c) NO trailing skill marker. We assert all three via one `reply_pattern` regex (full-line, anchored) plus a `not_contains` deny-list for the routing-failure modes. The absence of `[via orders-helper]` simultaneously proves Claude routed through the slash command and NOT through the auto-discoverable orders-helper skill (which mandates that marker on every reply).",
+  "tags": [
+    "slash-command",
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "/check-order 42",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "tools_invoked": ["mcp__orders_db__get_order"],
+        "tool_args_contain": {
+          "mcp__orders_db__get_order": {"order_id": "42"}
+        },
+        "tool_result_contains": {
+          "mcp__orders_db__get_order": "AGB-EVAL-42"
+        },
+        "reply_pattern": [
+          "^ORDER\\|42\\|Ada Lovelace\\|shipped\\|AGB-EVAL-42$"
+        ],
+        "not_contains": [
+          "unknown command",
+          "not a recognized command",
+          "I don't know what /check-order",
+          "[via orders-helper]"
+        ]
+      },
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ]
+    }
+  ]
+}

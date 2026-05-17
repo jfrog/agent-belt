@@ -1,0 +1,16 @@
+{
+  "name": "l1_explain_architecture",
+  "description": "L1: Explain the Express API architecture",
+  "tags": ["L1", "read-only", "understanding"],
+  "turns": [
+    {
+      "message": "Read through this TypeScript Express project and explain the architecture. How are routes, middleware, models, and services organized? What database does it use?",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["routes", "middleware", "services"],
+        "max_llm_turns": 25
+      }
+    }
+  ]
+}

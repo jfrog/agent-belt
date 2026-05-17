@@ -1,0 +1,44 @@
+{
+  "name": "l4_full_review_and_fix",
+  "description": "L4: Multi-turn - review all issues, fix the race condition, add a concurrent test",
+  "tags": ["L4", "multi-turn", "investigate-fix"],
+  "llm_scorer_instruction": "Evaluate whether the agent correctly identified the concurrency issue as the most critical bug, added proper synchronization with sync.RWMutex, and wrote a concurrent test that would actually catch the race condition (e.g. using goroutines and sync.WaitGroup).",
+  "turns": [
+    {
+      "message": "Review this Go URL shortener project for all bugs, security issues, and missing features. Read every file and give me a prioritized list.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["mutex", "goroutine"],
+        "tools_invoked_any": [["Read", "read_file", "View"]],
+        "max_llm_turns": 25
+      }
+    },
+    {
+      "message": "Fix the most critical bug - the one that could cause data corruption in production.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["internal/store/memory.go"],
+        "git_diff_contains": ["sync", "Mutex"]
+      },
+      "state_expect": {
+        "capture_git_diff": true,
+        "files_contain": {"internal/store/memory.go": "sync.RWMutex"}
+      }
+    },
+    {
+      "message": "Now write a test that proves the fix works under concurrent access. Use multiple goroutines to read and write simultaneously. The test should have failed before your fix.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "git_diff_contains": ["goroutine", "func Test"]
+      },
+      "state_expect": {
+        "capture_git_diff": true
+      }
+    }
+  ]
+}

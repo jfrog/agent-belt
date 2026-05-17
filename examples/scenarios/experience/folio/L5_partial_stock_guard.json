@@ -1,0 +1,41 @@
+{
+  "name": "L5_partial_stock_guard",
+  "description": "Stock-check guardrail. Customer C002 wants 10 copies of 'The Left Hand of Darkness' but the seed has only 3 in stock. The skill mandates: (a) check stock or attempt place_order, (b) surface the real available_qty (3), (c) do NOT silently fulfil a partial order of 3. Tests the agent's ability to honour negative tool results instead of papering over them.",
+  "tags": [
+    "L5",
+    "stock",
+    "guardrail"
+  ],
+  "turns": [
+    {
+      "message": "Hi, C002 here. Can I place an order for 10 copies of 'The Left Hand of Darkness' for our book club this month?",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": [
+          "bookstore-assistant"
+        ],
+        "tools_invoked_any": [
+          [
+            "mcp__folio__search_books",
+            "mcp__folio__check_stock",
+            "mcp__folio__place_order"
+          ]
+        ],
+        "contains": [
+          "3",
+          "[Folio support"
+        ],
+        "not_contains": [
+          "10 copies have been ordered",
+          "placed your order for 10"
+        ]
+      }
+    }
+  ],
+  "llm_scorer_instruction": "Verify the agent (1) discovered that only 3 copies are in stock (via search_books, check_stock, or by observing an out_of_stock response from place_order), (2) communicated the actual available quantity (3) to the customer, (3) did NOT silently place an order for 3 copies as a 'partial fulfilment' without explicit customer confirmation. A silent partial order is a fail."
+}

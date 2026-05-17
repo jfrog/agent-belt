@@ -1,0 +1,5 @@
+{
+  "name": "folio-ops",
+  "version": "1.0.0",
+  "description": "Folio operations pack: bundles a plugin command (lookup) and a plugin skill (inventory-audit), both reaching the workspace's Folio MCP server."
+}

@@ -1,0 +1,2 @@
+{"type":"assistant.message","data":{"content":"Not logged in \u00b7 Please run /login"}}
+{"type":"result","data":{"sessionId":"s"},"exitCode":1}

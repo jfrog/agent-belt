@@ -1,0 +1,21 @@
+{
+  "name": "l3_add_author_tests",
+  "description": "L3: Add a test file for the author endpoints",
+  "tags": ["L3", "multi-file", "testing"],
+  "turns": [
+    {
+      "message": "There are no tests for the author endpoints. Create tests/authors.test.ts with tests for:\n1. GET /authors returns the hardcoded authors list\n2. GET /authors/:id returns a specific author\n3. GET /authors/:id returns 404 for non-existent ID\n4. POST /authors creates a new author\n\nLook at tests/books.test.ts for the testing pattern used in this project.",
+      "flags": ["--permission-mode", "bypassPermissions"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["tests/authors.test.ts"],
+        "git_diff_contains": ["describe", "author"]
+      },
+      "state_expect": {
+        "files_exist": ["tests/authors.test.ts"],
+        "files_contain": {"tests/authors.test.ts": "describe"}
+      }
+    }
+  ]
+}

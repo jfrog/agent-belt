@@ -1,0 +1,21 @@
+{
+  "name": "l2_fix_pagination",
+  "description": "L2: Fix the pagination off-by-one bug",
+  "tags": ["L2", "single-file", "bugfix"],
+  "turns": [
+    {
+      "message": "The paginate function in src/utils/pagination.ts has an off-by-one bug: page 1 should return the first items but instead returns items starting from offset `limit` (skipping the first page). Fix the offset calculation to use (page - 1) * limit.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/utils/pagination.ts"],
+        "files_not_modified": ["src/index.ts", "package.json"],
+        "git_diff_contains": ["page - 1"]
+      },
+      "state_expect": {
+        "files_contain": {"src/utils/pagination.ts": "page - 1"}
+      }
+    }
+  ]
+}

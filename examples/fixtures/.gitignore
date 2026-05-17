@@ -1,0 +1,5 @@
+# Vendored test fixtures are self-contained sample projects; some are
+# real git repos. Suppress their inner .git/ dirs and any uv.lock that
+# `uv sync` generates inside a fixture project.
+*/.git/
+*/uv.lock

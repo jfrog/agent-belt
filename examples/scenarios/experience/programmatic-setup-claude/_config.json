@@ -1,0 +1,6 @@
+{
+  "agent": "claude-code",
+  "default_tags": ["experience", "programmatic-setup", "real-runnable"],
+  "working_dir": "../../../fixtures/programmatic-setup",
+  "workspace_isolation": "git-worktree"
+}

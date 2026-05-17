@@ -1,0 +1,17 @@
+{
+  "name": "l1_explain_architecture",
+  "description": "L1: Explain the Go URL shortener architecture",
+  "tags": ["L1", "read-only", "understanding"],
+  "turns": [
+    {
+      "message": "Read through this Go project and explain the architecture. What are the main packages, how do they interact, and what design patterns are used (e.g. interfaces, dependency injection)?",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["handler", "store", "shortener"],
+        "tools_invoked_any": [["Read", "read_file", "View"]],
+        "max_llm_turns": 20
+      }
+    }
+  ]
+}

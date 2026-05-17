@@ -1,0 +1,2 @@
+{"type":"message","role":"model","content":"HTTP 429 Too Many Requests \u00b7 rate limit exceeded"}
+{"type":"result","status":"error","error":{"type":"rate_limit_error","message":"Too many requests"},"stats":{"duration_ms":12}}

@@ -1,0 +1,43 @@
+{
+  "name": "plugin_skill",
+  "description": "Proves the workspace-provisioned Claude Code plugin (`.claude/plugins/orders-pack/`) was loaded via `--plugin-dir` AND its bundled skill at `skills/processing-watch/SKILL.md` was discovered and consulted. The prompt 'stuck in processing' matches ONLY the plugin skill's frontmatter trigger phrasing ('stalled, stuck, or backlogged orders'). The top-level orders-helper skill does not advertise this wording, so routing must come through the plugin's skills directory. Triple-bound: (a) `skills_invoked: [processing-watch]` matches Claude's Skill tool with `args.skill == \"processing-watch\"`, (b) the plugin skill's mandated `mcp__orders_db__list_orders` call with `status: \"processing\"` fired, (c) the plugin-specific marker `[via processing-watch]` is present AND top-level orders-helper data (AGB-EVAL-42, Ada Lovelace, Grace Hopper, the `[via orders-helper]` marker) is absent, ruling out cross-skill routing.",
+  "tags": [
+    "plugin",
+    "skill",
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "Which orders are stuck in processing right now? Give me the order id and customer name for each.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": ["processing-watch"],
+        "tools_invoked": ["mcp__orders_db__list_orders"],
+        "tool_args_contain": {
+          "mcp__orders_db__list_orders": {"status": "processing"}
+        },
+        "tool_result_contains": {
+          "mcp__orders_db__list_orders": "Alan Turing"
+        },
+        "contains": [
+          "43",
+          "Alan Turing",
+          "[via processing-watch]"
+        ],
+        "not_contains": [
+          "AGB-EVAL-42",
+          "Ada Lovelace",
+          "Grace Hopper",
+          "[via orders-helper]"
+        ]
+      },
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions",
+        "--plugin-dir",
+        ".claude/plugins/orders-pack"
+      ]
+    }
+  ]
+}

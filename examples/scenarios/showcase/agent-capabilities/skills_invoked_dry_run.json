@@ -1,0 +1,15 @@
+{
+  "name": "skills_invoked_dry_run",
+  "description": "Demonstrates skills_invoked. Dry-run only because skills are agent-specific surfaces (Claude Code skills under .claude/skills/, Cursor skills under .cursor/skills/, etc.) and aren't installed by default. To enable: install or vendor a skill named 'review' (or change the expected name), trigger the agent to invoke it, then drop --dry-run.",
+  "tags": ["showcase", "agent-capabilities", "skills", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Use the 'review' skill to review the file pyproject.toml.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": ["review"]
+      }
+    }
+  ]
+}

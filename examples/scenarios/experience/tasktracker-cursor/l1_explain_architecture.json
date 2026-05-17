@@ -1,0 +1,17 @@
+{
+  "name": "l1_explain_architecture",
+  "description": "L1: Ask the agent to explain the tasktracker architecture (cursor parity of the tasktracker-claude scenario)",
+  "tags": ["L1", "read-only", "understanding"],
+  "turns": [
+    {
+      "message": "Read through this Python project and explain the architecture. What are the main modules, how do they interact, and what does each one do?",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["cli", "models", "storage", "formatters"],
+        "tools_invoked_any": [["Read", "List", "Glob", "Shell"]],
+        "max_llm_turns": 20
+      }
+    }
+  ]
+}

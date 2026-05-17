@@ -1,0 +1,6 @@
+{
+  "agent": "claude-code",
+  "working_dir": "../../../fixtures/folio",
+  "workspace_isolation": "git-worktree",
+  "default_tags": ["experience", "folio", "mcp-http", "skill", "real-runnable"]
+}

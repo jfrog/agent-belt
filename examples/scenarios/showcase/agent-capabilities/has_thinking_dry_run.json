@@ -1,0 +1,16 @@
+{
+  "name": "has_thinking_dry_run",
+  "description": "Demonstrates has_thinking. Dry-run only because thinking-mode emission is agent-specific and gated on flags. To enable: switch --agent claude-code, set --agent-arg model=claude-3-7-sonnet (or newer), and pass the per-agent thinking flag. Then `belt eval ... --modes rules` will check that the captured thinking_text is non-empty.",
+  "tags": ["showcase", "agent-capabilities", "thinking", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Think step-by-step about how you would compute the 10th Fibonacci number, then answer with just the number.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["55"],
+        "has_thinking": true
+      }
+    }
+  ]
+}

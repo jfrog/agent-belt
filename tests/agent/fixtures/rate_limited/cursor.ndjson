@@ -1,0 +1,2 @@
+{"type":"message","content":"HTTP 429 Too Many Requests \u00b7 rate limit exceeded"}
+{"type":"result","is_error":true,"chat_id":"c","duration_ms":12}

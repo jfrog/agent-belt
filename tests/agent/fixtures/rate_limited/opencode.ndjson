@@ -1,0 +1,2 @@
+{"type":"text","part":{"text":"HTTP 429 Too Many Requests \u00b7 rate limit exceeded"}}
+{"type":"error","error":{"name":"RateLimitError","data":{"message":"Too many requests"}}}

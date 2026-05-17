@@ -1,0 +1,22 @@
+{
+  "name": "l3_add_json_format",
+  "description": "L3: Add --format json flag to the CLI, touching cli.py and formatters.py",
+  "tags": ["L3", "multi-file", "feature"],
+  "turns": [
+    {
+      "message": "Add a --format flag to the 'list' command in cli.py that accepts 'table' (default) and 'json'. When --format json is used, call format_json from formatters.py instead of format_table. The format_json function already exists.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/tasktracker/cli.py"],
+        "git_diff_contains": ["--format", "format_json"]
+      },
+      "state_expect": {
+        "files_contain": {
+          "src/tasktracker/cli.py": "format_json"
+        }
+      }
+    }
+  ]
+}

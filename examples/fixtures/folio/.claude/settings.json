@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "mcp__folio__search_books",
+      "mcp__folio__get_book",
+      "mcp__folio__check_stock",
+      "mcp__folio__get_customer",
+      "mcp__folio__list_customers",
+      "mcp__folio__list_customer_orders",
+      "mcp__folio__get_order",
+      "mcp__folio__place_order",
+      "mcp__folio__refund_order",
+      "mcp__folio__issue_store_credit",
+      "mcp__folio__escalate_to_human"
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}

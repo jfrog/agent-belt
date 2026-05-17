@@ -1,0 +1,18 @@
+{
+  "name": "files_modified",
+  "description": "Demonstrates files_modified_any, files_modified_exact, files_not_modified, and git_diff_contains. Asks the agent to fix the divide-by-zero bug in src/calculator.py and asserts (a) calculator.py was edited, (b) only calculator.py was edited, (c) pyproject.toml/README.md were not touched, (d) the diff contains the literal 'ValueError'.",
+  "tags": ["showcase", "editing-workspace", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Edit src/calculator.py: change the divide(a, b) function so that when b is 0 it raises ValueError('cannot divide by zero'). Keep the existing behaviour for non-zero b. Do not modify any other file.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/calculator.py"],
+        "files_modified_exact": ["src/calculator.py"],
+        "files_not_modified": ["pyproject.toml", "README.md"],
+        "git_diff_contains": ["ValueError", "cannot divide by zero"]
+      }
+    }
+  ]
+}

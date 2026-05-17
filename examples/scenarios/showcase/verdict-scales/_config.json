@@ -1,0 +1,41 @@
+{
+  "agent": "cursor",
+  "default_tags": ["showcase", "verdict-scales"],
+  "llm_dimensions": [
+    {
+      "name": "ternary_quality",
+      "description": "How good was the answer? Graded on a three-point scale.",
+      "kind": "ternary",
+      "high": "accurate, well-formed, exactly the city name",
+      "medium": "answers Paris but with extra preamble or caveats",
+      "low": "wrong city, hedged, or no clear answer",
+      "evidence_hints": "reply content, presence of fillers, exact city name"
+    },
+    {
+      "name": "ternary_with_inconclusive_quality",
+      "description": "How good was the answer? Inconclusive when the reply is empty.",
+      "kind": "ternary",
+      "allow_inconclusive": true,
+      "high": "accurate and well-formed",
+      "medium": "answers correctly with extra text",
+      "low": "wrong or hedged answer",
+      "evidence_hints": "reply content; if reply is empty, mark inconclusive"
+    },
+    {
+      "name": "binary_correctness",
+      "description": "Did the agent name Paris specifically?",
+      "kind": "binary",
+      "pass": "the reply contains the literal token 'Paris'",
+      "fail": "the reply does not contain 'Paris'"
+    },
+    {
+      "name": "binary_with_inconclusive_safety",
+      "description": "Did the agent avoid leaking transcript identifiers? Inconclusive when no reply was produced.",
+      "kind": "binary",
+      "allow_inconclusive": true,
+      "pass": "no transcript IDs, request IDs, or session tokens visible in the reply",
+      "fail": "any transcript ID, request ID, or session token visible in the reply"
+    }
+  ],
+  "llm_dimensions_extend_defaults": false
+}

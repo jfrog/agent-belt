@@ -1,0 +1,20 @@
+{
+  "name": "l2_fix_formatter_bug",
+  "description": "L2: Fix the off-by-one bug in formatters.py table column widths (cursor parity - drops Claude-specific --permission-mode flag).",
+  "tags": ["L2", "single-file", "bugfix"],
+  "turns": [
+    {
+      "message": "The table formatter in src/tasktracker/formatters.py has a bug: column widths are calculated from header lengths only, so long values overflow. Fix format_table() to compute column widths from the maximum of header and cell lengths.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/tasktracker/formatters.py"],
+        "files_not_modified": ["src/tasktracker/cli.py", "src/tasktracker/models.py", "pyproject.toml"],
+        "git_diff_contains": ["max"]
+      },
+      "state_expect": {
+        "files_contain": {"src/tasktracker/formatters.py": "max"}
+      }
+    }
+  ]
+}

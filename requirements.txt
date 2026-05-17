@@ -1,0 +1,7 @@
+# Runtime dependencies are declared in pyproject.toml [project.dependencies].
+# For development, install with:
+#
+#   pip install -e ".[dev]"
+#
+# This pulls in both runtime deps and dev tools (pytest, black, isort, ruff).
+-e ".[dev]"

@@ -1,0 +1,24 @@
+{
+  "name": "state_files",
+  "description": "Demonstrates the StateExpectation block: files_exist, files_contain, files_not_exist, capture_git_diff. Asks the agent to add a tests file and asserts the file exists, contains 'def test_', and the original calculator.py is unchanged. capture_git_diff stores the diff in TurnOutput so a downstream LLM judge can inspect it.",
+  "tags": ["showcase", "editing-workspace", "state", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Create a new file tests/test_calculator.py with a single pytest test named test_add_basic that imports add from src.calculator and asserts add(1, 2) == 3. Use Python imports relative to the project root (the package is named 'calculator' in src/). Do not modify any other file.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["tests/test_calculator.py"],
+        "files_not_modified": ["src/calculator.py", "pyproject.toml"]
+      },
+      "state_expect": {
+        "files_exist": ["tests/test_calculator.py"],
+        "files_contain": {
+          "tests/test_calculator.py": "def test_add_basic"
+        },
+        "files_not_exist": ["tests/test_does_not_exist.py"],
+        "capture_git_diff": true
+      }
+    }
+  ]
+}

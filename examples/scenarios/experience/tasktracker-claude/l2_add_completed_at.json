@@ -1,0 +1,21 @@
+{
+  "name": "l2_add_completed_at",
+  "description": "L2: Add a completed_at timestamp field to the Task model",
+  "tags": ["L2", "single-file", "feature"],
+  "turns": [
+    {
+      "message": "The Task dataclass in src/tasktracker/models.py is missing a completed_at field. Add an Optional[float] field that defaults to None and gets set to the current time when a task is marked done. Update to_dict and from_dict to include it.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/tasktracker/models.py"],
+        "files_not_modified": ["pyproject.toml", "README.md"],
+        "git_diff_contains": ["completed_at"]
+      },
+      "state_expect": {
+        "files_contain": {"src/tasktracker/models.py": "completed_at"}
+      }
+    }
+  ]
+}

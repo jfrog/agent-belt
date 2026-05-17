@@ -1,0 +1,15 @@
+{
+  "name": "tools_in_order",
+  "description": "Demonstrates tools_invoked_in_order. Asserts the agent searched (Grep) before reading the matching file (Read). Order is checked as a subsequence of the actual call sequence - extra unrelated calls between them are allowed.",
+  "tags": ["showcase", "tool-trajectory", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Find any file in the current directory that contains the literal string 'belt' in its name field, then read that file and report what it is. Use a search tool first, then read the file.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "tools_invoked_in_order": ["Grep", "Read"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "l3_fix_dockerfile",
+  "description": "L3: Fix Dockerfile to run as non-root user",
+  "tags": ["L3", "multi-file", "security"],
+  "turns": [
+    {
+      "message": "The Dockerfile runs the container as root, which is a security risk. Fix it to:\n1. Create a non-root user in the final stage\n2. Copy the binary with appropriate ownership\n3. Switch to the non-root user before CMD\n\nKeep the multi-stage build structure.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["Dockerfile"],
+        "files_not_modified": ["go.mod", "Makefile"],
+        "git_diff_contains": ["USER", "adduser"]
+      },
+      "state_expect": {
+        "files_contain": {"Dockerfile": "USER"}
+      }
+    }
+  ]
+}

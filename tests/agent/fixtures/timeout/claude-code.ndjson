@@ -1,0 +1,2 @@
+{"type":"assistant","content":[{"type":"text","text":"request timed out after 60s"}]}
+{"type":"result","is_error":true,"session_id":"s","duration_ms":60000}

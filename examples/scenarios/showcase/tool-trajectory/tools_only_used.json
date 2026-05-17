@@ -1,0 +1,15 @@
+{
+  "name": "tools_only_used",
+  "description": "Demonstrates only_used_tools. Whitelists the set of tools the agent is allowed to call - any tool outside the list fails the check. Useful for narrowly-scoped read-only tasks.",
+  "tags": ["showcase", "tool-trajectory", "single-turn", "strict", "real-runnable"],
+  "turns": [
+    {
+      "message": "Read the file README.md in the current directory and reply with the first heading line (the line that starts with '# '). Do not run any shell commands. Do not search - just open the file directly.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "only_used_tools": ["Read", "read_file", "View"]
+      }
+    }
+  ]
+}

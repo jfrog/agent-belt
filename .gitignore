@@ -1,0 +1,56 @@
+# Local secrets and per-machine config
+.env
+belt.yaml
+
+# Editor, IDE, and AI-assistant state
+.claude/
+.cursor/
+.fly/
+.idea/
+
+# Python virtual environments
+.venv/
+venv/
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+
+# Python bytecode and tool caches
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+
+# Test coverage reports
+.coverage
+htmlcov/
+
+# belt runtime output
+.score_cache/
+outcomes/
+
+# Local-only artifacts produced by hands-on sandbox e2e verification
+# from a corporate-TLS-intercept host (the canonical Dockerfile under
+# examples/sandbox-images/Dockerfile.cursor.example uses a vanilla
+# `curl https://cursor.com/install`, which fails on hosts whose CA
+# bundle does not include the proxy's root certificate). Both files
+# are derived from public artefacts, just inconvenient to fetch in
+# every environment.
+Dockerfile.cursor.local
+cursor-agent.tar.gz
+
+# Cursor-agent's own state directory. Shows up at the agent-belt
+# repo root when scenarios run with the host-mode sandbox using the
+# repo as the working directory; the docker-mode sandbox keeps it
+# inside the per-run tmpfs HOME and never touches the host. Either
+# way, it is not source.
+.cache/
+
+# Test artefacts written by sandboxed showcase scenarios when a
+# scenario's working_dir resolves to the agent-belt repo root
+# (typically only during local hands-on verification).
+/sandbox_evidence.txt
+/sandbox_state.txt

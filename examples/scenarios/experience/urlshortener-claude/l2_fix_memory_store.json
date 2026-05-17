@@ -1,0 +1,21 @@
+{
+  "name": "l2_fix_memory_store",
+  "description": "L2: Add mutex to MemoryStore for goroutine safety",
+  "tags": ["L2", "single-file", "bugfix"],
+  "turns": [
+    {
+      "message": "The MemoryStore in internal/store/memory.go is not goroutine-safe. Add a sync.RWMutex to protect the map. Use RLock for read operations (Lookup, Exists) and Lock for write operations (Save).",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["internal/store/memory.go"],
+        "files_not_modified": ["internal/store/store.go", "internal/store/postgres.go", "go.mod"],
+        "git_diff_contains": ["sync", "Mutex", "Lock"]
+      },
+      "state_expect": {
+        "files_contain": {"internal/store/memory.go": "sync.RWMutex"}
+      }
+    }
+  ]
+}

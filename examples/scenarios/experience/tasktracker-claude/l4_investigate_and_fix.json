@@ -1,0 +1,43 @@
+{
+  "name": "l4_investigate_and_fix",
+  "description": "L4: Multi-turn - find all bugs, fix the worst one, add a test",
+  "tags": ["L4", "multi-turn", "investigate-fix"],
+  "llm_scorer_instruction": "Evaluate whether the agent systematically investigated the codebase before making changes, fixed the correct bug without introducing regressions, and wrote a meaningful test.",
+  "turns": [
+    {
+      "message": "Read through the entire tasktracker project and identify all bugs and issues you can find. List each one with its location and severity.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["storage", "formatter"],
+        "tools_invoked_any": [["Read", "read_file", "View"]],
+        "max_llm_turns": 20
+      }
+    },
+    {
+      "message": "Fix the most impactful bug you found. Don't change any other files besides the one with the bug.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/tasktracker/storage.py", "src/tasktracker/formatters.py", "src/tasktracker/models.py", "src/tasktracker/cli.py"]
+      },
+      "state_expect": {
+        "capture_git_diff": true
+      }
+    },
+    {
+      "message": "Now add a test for the fix you just made. Put it in the appropriate test file under tests/.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["tests/test_storage.py", "tests/test_models.py"],
+        "git_diff_contains": ["def test_"]
+      },
+      "state_expect": {
+        "capture_git_diff": true
+      }
+    }
+  ]
+}

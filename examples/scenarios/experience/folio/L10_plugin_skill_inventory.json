@@ -1,0 +1,44 @@
+{
+  "name": "L10_plugin_skill_inventory",
+  "description": "Proves the Claude Code plugin (`.claude/plugins/folio-ops/`) was loaded via `--plugin-dir` AND its bundled skill at `skills/inventory-audit/SKILL.md` was discovered and consulted. The prompt 'which books are running low' matches the plugin skill's frontmatter trigger phrasing; the top-level bookstore-assistant skill does not advertise this wording. Triple-bound: (a) `skills_invoked: [inventory-audit]` matches Claude's Skill tool with `args.skill == \"inventory-audit\"`, (b) the mandated `mcp__folio__search_books` call fired and the reply contains the three seed books with stock<10 (Left Hand of Darkness, Anathem, Pachinko), (c) the plugin-specific marker `[via inventory-audit]` is present, ruling out cross-skill routing.",
+  "tags": [
+    "L10",
+    "plugin",
+    "skill",
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "Which books in our catalog are running low? I want a stock audit.",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions",
+        "--plugin-dir",
+        ".claude/plugins/folio-ops"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": [
+          "inventory-audit"
+        ],
+        "tools_invoked": [
+          "mcp__folio__search_books"
+        ],
+        "contains": [
+          "978-0441478125",
+          "Left Hand of Darkness",
+          "978-0061767395",
+          "Anathem",
+          "978-1455563937",
+          "Pachinko",
+          "[via inventory-audit]"
+        ],
+        "not_contains": [
+          "[via bookstore-assistant]"
+        ]
+      }
+    }
+  ],
+  "llm_scorer_instruction": "Verify the agent (1) routed through the inventory-audit plugin skill rather than bookstore-assistant, (2) called mcp__folio__search_books to retrieve the catalog, (3) listed exactly the three books with stock_qty<10 (Left Hand of Darkness stock=3, Anathem stock=8, Pachinko stock=9), (4) ended the reply with the literal marker [via inventory-audit]."
+}

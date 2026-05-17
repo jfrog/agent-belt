@@ -1,0 +1,219 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-belt"
+dynamic = ["version"]
+description = "Evaluation harness for real headless CLI agents - reproducible multi-turn scenarios, rule + LLM scoring, cross-agent comparison"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [
+    { name = "JFrog Ltd.", email = "support@jfrog.com" },
+]
+keywords = ["evaluation", "agent", "cli", "llm", "testing", "benchmark"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "backoff>=2.2",
+    "filelock>=3.12",
+    "pydantic>=2.0",
+    "loguru>=0.7",
+    "httpx>=0.24",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+# Label spellings follow PyPI's well-known set so the PyPI project page
+# renders sidebar icons next to each link (Documentation, Changelog,
+# Source, etc.). See https://docs.pypi.org/project_metadata/#icons.
+Homepage = "https://github.com/jfrog/agent-belt"
+Documentation = "https://github.com/jfrog/agent-belt#readme"
+Source = "https://github.com/jfrog/agent-belt"
+Issues = "https://github.com/jfrog/agent-belt/issues"
+Changelog = "https://github.com/jfrog/agent-belt/releases"
+
+[project.optional-dependencies]
+# Kept for ``pip install 'agent-belt[dev]'`` compatibility. Mirrored in the
+# ``[dependency-groups] dev`` section below, which is what ``uv sync`` reads
+# (PEP 735). Both sources stay in sync; CI's ``uv sync --locked`` gate catches
+# drift between them and ``uv.lock``.
+dev = [
+    "pytest>=8.0",
+    "pre-commit>=3.0",
+    "black>=24.0",
+    "isort>=5.0",
+    "ruff>=0.4",
+    # Build/install-time tool, not a runtime dep of the wheel. Pinned to
+    # clear a known SCA finding on a transitive build dep without bloating
+    # the public PyPI install surface.
+    "setuptools>=80.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pre-commit>=3.0",
+    "black>=24.0",
+    "isort>=5.0",
+    "ruff>=0.4",
+    "setuptools>=80.10.0",
+]
+
+[project.scripts]
+belt = "belt.cli:main"
+
+[project.entry-points."belt.agents"]
+claude-code = "belt.agent.claude_code:ClaudeCodeAgentAdapter"
+codex = "belt.agent.codex:CodexAgentAdapter"
+copilot = "belt.agent.copilot:CopilotAgentAdapter"
+cursor = "belt.agent.cursor:CursorAgentAdapter"
+gemini = "belt.agent.gemini:GeminiAgentAdapter"
+goose = "belt.agent.goose:GooseAgentAdapter"
+opencode = "belt.agent.opencode:OpenCodeAgentAdapter"
+
+[project.entry-points."belt.scorers"]
+rules = "belt.scorer.rules:RuleBasedScorer"
+llm = "belt.scorer.llm:LLMScorer"
+
+[project.entry-points."belt.exporters"]
+csv = "belt.exporter.csv:CsvExporter"
+jsonl = "belt.exporter.jsonl:JsonlExporter"
+junit = "belt.exporter.junit:JUnitExporter"
+markdown = "belt.exporter.markdown:MarkdownExporter"
+
+[project.entry-points."belt.sandbox_providers"]
+host = "belt.runner.sandbox.host:HostSandboxProvider"
+docker = "belt.runner.sandbox.docker:DockerSandboxProvider"
+
+# Pin the package index to public PyPI in the project file itself, rather than
+# relying on contributor-side ``~/.config/uv/uv.toml`` or ``$UV_INDEX_URL``.
+# Without this, ``uv lock`` would write whatever index the contributor has
+# configured locally (e.g. an internal mirror) into ``uv.lock``'s download URLs,
+# producing a lockfile that fails on CI / for outside contributors with a 401.
+# ``default = true`` makes this the sole index; private mirrors stay out of the
+# public lockfile.
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple/"
+default = true
+
+[tool.hatch.version]
+source = "vcs"
+# Fallback for builds outside a git repo (e.g. from sdist)
+fallback-version = "0.0.0"
+
+[tool.hatch.version.raw-options]
+version_scheme = "no-guess-dev"
+# Only ``v*`` tags count as version sources. Without ``--match v*``, a stray
+# bare-numeric tag (e.g. ``0.1.2`` pushed by mistake) would be picked up by
+# ``hatch-vcs`` as a version base for non-tagged builds and pollute future
+# wheels' derived version.
+git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "v*"]
+
+# No ``[tool.hatch.build.hooks.vcs] version-file =`` block: the canonical version
+# lives in the wheel's ``.dist-info/METADATA`` (written by ``hatch-vcs``) and is
+# read at runtime via ``importlib.metadata.version("agent-belt")``. This is the
+# pattern used by ruff, uv, hatch, attrs, packaging, and pytest. PEP 396 (which
+# would have blessed ``__version__`` as the canonical reader) was rejected;
+# ``importlib.metadata`` is the source of truth.
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/belt"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/belt" = "belt"
+
+# Ship the canonical showcase scenarios inside the wheel so `belt quickstart`
+# works after `pip install agent-belt` (no clone required). Only the showcase
+# ships - the rest of examples/ stays repo-only because it's either large
+# fixtures, cross-agent demos, or scorer-config snippets that users don't
+# need bundled.
+#
+# The `sample-project` fixture rides along because three showcase groups
+# (editing-workspace, sandboxed, sandboxed-offline) declare
+# `working_dir: "../../../fixtures/sample-project"` in their _config.json.
+# Without it those groups raise `WorkspaceError: working_dir does not exist`
+# at scenario load time. Subpath only (220K); bundling the full
+# `examples/fixtures/` directory would pull in 38MB of bookstore-api /
+# tasktracker / urlshortener fixtures that no showcase group references.
+[tool.hatch.build.targets.wheel.force-include]
+"examples/scenarios/showcase" = "belt/_bundled_examples/scenarios/showcase"
+"examples/fixtures/sample-project" = "belt/_bundled_examples/fixtures/sample-project"
+
+# The agent-skills directory at src/belt/.agents/skills/belt/ is shipped
+# automatically by the default package selection above (it lives inside the
+# package directory) - so consumer agents find SKILL.md under
+# site-packages/belt/.agents/skills/belt/ after `pip install agent-belt`.
+# The path matches the agent-agnostic `.agents/skills/<name>/` convention
+# auto-discovered by Cursor, Claude Code, Codex and others.
+# No explicit force-include needed.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["--import-mode=importlib"]
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F"]
+
+# bandit is the Python SAST equivalent of Go's gosec (cf. JFrog's
+# ``jfrog/.github/actions/gosec-scanner`` shared action used across
+# jfrog-cli, frogbot, gofrog, jfrog-client-go). Wired into pre-commit
+# (and therefore ``make lint`` / CI ``lint`` job) on src/ and plugins/.
+# Tests are deliberately excluded - the docker-sandbox suite simulates
+# env-var exfil patterns to *prove* non-leakage and would dominate the
+# report with false positives.
+[tool.bandit]
+exclude_dirs = ["tests", "examples", ".venv"]
+# B101 (assert_used): asserts in source are intentional invariant checks
+#   (Pydantic post-init validators, runtime contracts). Tests are excluded
+#   anyway, so this skip only affects the small number of asserts in src/.
+# B105 (hardcoded_password_string): bandit flags any string literal whose
+#   variable name matches /pass/i, including domain enum values such as
+#   ``"auth_failed"``, ``"other"``, ``"pass"`` (verdict labels) - none are
+#   credentials. We rely on gitleaks for actual leaked-credential detection.
+# B110 / B112 (try/except/pass | continue): defensive cleanup paths
+#   (best-effort tempdir teardown, optional-feature degradation, scoreboard
+#   resilience) where the surrounding code is *intended* to swallow
+#   exceptions. Bandit's check is a code-smell heuristic, not a real bug.
+# B404 (import_subprocess) / B603 (subprocess_without_shell_true_check) /
+# B607 (start_process_with_partial_path): belt is fundamentally a subprocess
+#   runner for agent CLIs - we look up CLIs on PATH by design and never use
+#   shell=True. The dedicated sandbox tests in tests/runner/sandbox/ cover
+#   the actual safety properties (env passthrough, CWD isolation, stdout
+#   leakage) far better than B6xx static heuristics can.
+# B406 (import_xml_sax / xml.sax.saxutils): we use ``escape`` and
+#   ``quoteattr`` for OUTPUT escaping (terminal panels, JUnit XML), not for
+#   parsing untrusted XML - the rule's threat model does not apply.
+# Real-risk B2xx / B3xx categories (path traversal, urlopen scheme, tarfile
+# extractall) are NOT in this skip list - they are suppressed with inline
+# ``# nosec`` annotations only at the audited call sites in
+# ``src/belt/runner/workspace.py`` so any future unguarded use still trips
+# the gate.
+skips = ["B101", "B105", "B110", "B112", "B404", "B406", "B603", "B607"]

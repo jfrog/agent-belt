@@ -1,0 +1,17 @@
+{
+  "name": "sandboxed_workspace_write",
+  "description": "Proves the worktree bind-mount is the writable surface inside the sandbox. The agent is asked to create a file at the workspace root; the runner asserts the file landed (files_modified_any) AND that nothing else moved (files_modified_exact). Together with `sandboxed_hello.json` (smoke), this scenario exercises the read/write round-trip across the sandbox boundary: agent inside container -> /work bind -> host worktree -> runner artifact collection. A green run with `--sandbox docker` proves the only-writable-mount contract end-to-end with a real LLM driving the writes (the `test_docker_e2e.py` suite covers the same invariant at the provider layer; this scenario covers it at the orchestrator+scoring layer).",
+  "tags": ["showcase", "sandbox", "single-turn", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Create a new file at the workspace root named sandbox_evidence.txt whose only contents is the single line: written-from-inside-sandbox\nDo not modify any other file. Reply with just the filename you created.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["sandbox_evidence.txt"],
+        "files_modified_any": ["sandbox_evidence.txt"],
+        "files_modified_exact": ["sandbox_evidence.txt"]
+      }
+    }
+  ]
+}

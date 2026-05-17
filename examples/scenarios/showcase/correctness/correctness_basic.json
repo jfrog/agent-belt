@@ -1,0 +1,16 @@
+{
+  "name": "correctness_basic",
+  "description": "Demonstrates TurnExpectation correctness fields: no_errors, has_reply, contains, not_contains. Asks a deterministic question and asserts both the presence of the right answer and the absence of common mistakes.",
+  "tags": ["showcase", "correctness", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "What is 12 multiplied by 11? Reply with just the number on its own line, nothing else.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["132"],
+        "not_contains": ["I don't know", "I cannot", "unable to", "as an AI"]
+      }
+    }
+  ]
+}

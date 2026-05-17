@@ -1,0 +1,17 @@
+{
+  "name": "budgets",
+  "description": "Demonstrates max_llm_turns and max_tool_calls. Caps the agent at a tight budget for a simple task and asserts it stayed within. The cap is loose enough to be robust across model versions; tighten when you have an actual budget to enforce.",
+  "tags": ["showcase", "budgets", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "What is 7 + 8? Reply with just the number, no explanation, no tool calls.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["15"],
+        "max_llm_turns": 5,
+        "max_tool_calls": 5
+      }
+    }
+  ]
+}

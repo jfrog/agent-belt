@@ -1,0 +1,42 @@
+{
+  "name": "L1_catalog_search",
+  "description": "Plain catalog discovery. Customer asks for sci-fi by Neal Stephenson; the agent must call `search_books` against the Folio MCP and return the two canonical titles (Snow Crash, Anathem) verbatim from the tool result. Triple-bound: (a) the `bookstore-assistant` skill must auto-trigger off the catalog wording, (b) `mcp__folio__search_books` must fire with a Stephenson-shaped query, (c) the skill's mandated reply marker `[Folio support` must appear.",
+  "tags": [
+    "L1",
+    "catalog",
+    "happy-path"
+  ],
+  "turns": [
+    {
+      "message": "Hi! I'm looking for sci-fi books by Neal Stephenson. What's in your catalog and what's in stock right now?",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": [
+          "bookstore-assistant"
+        ],
+        "tools_invoked": [
+          "mcp__folio__search_books"
+        ],
+        "forbidden_tools": [
+          "Read",
+          "Bash",
+          "WebFetch"
+        ],
+        "contains": [
+          "Snow Crash",
+          "Anathem",
+          "[Folio support"
+        ],
+        "not_contains": [
+          "I don't have access",
+          "cannot find any books"
+        ]
+      }
+    }
+  ]
+}

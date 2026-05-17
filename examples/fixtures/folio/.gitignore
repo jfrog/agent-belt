@@ -1,0 +1,6 @@
+# The Folio bookstore fixture ships .claude/ as checked-in per-agent
+# provisioning (skill, slash command, plugin manifest, MCP wiring, CLI
+# settings). The root .gitignore drops .claude/ everywhere; re-include
+# it for this fixture only so the demo can exercise Claude Code.
+!.claude/
+!.claude/**

@@ -1,0 +1,40 @@
+# Reference --export-config / --to-config file.
+#
+# Shape: a top-level mapping with a single ``exporters`` key whose value is a
+# list of {name, path, options} entries. ``extra: forbid`` is enforced by
+# Pydantic, so a typo (e.g. ``paht:`` instead of ``path:``) fails fast at
+# parse time rather than silently producing no output.
+#
+# Names must match an exporter shown by ``belt doctor`` under "Exporters"
+# (or be loadable via dotted import path when
+# ``--allow-arbitrary-exporter`` / ``BELT_ALLOW_ARBITRARY_EXPORTER=1``
+# is set).
+#
+# Paths are resolved against the run directory; absolute paths are honoured
+# as-is so a CI workflow can pin an artefact location.
+
+exporters:
+  # Spreadsheet-friendly summary; one row per scenario by default.
+  - name: csv
+    path: results.csv
+    options:
+      delimiter: ","
+      granularity: scenario  # or "trial" to expand --trials N
+
+  # Stream-friendly per-trial records for analytics pipelines.
+  - name: jsonl
+    path: results.jsonl
+    options:
+      granularity: scenario  # default; use "summary" to collapse trials
+
+  # CI test reporter contract (GitHub Actions, GitLab, Buildkite, Jenkins).
+  - name: junit
+    path: report.xml
+    options:
+      suite_name: belt
+      include_stdout: false       # set true to embed the head of turn_0_cli.txt
+      max_body_bytes: 16384       # cap per <failure>/<error> body in bytes
+
+  # Human-readable summary suitable for a PR comment or $GITHUB_STEP_SUMMARY.
+  - name: markdown
+    path: summary.md

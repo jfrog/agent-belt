@@ -1,0 +1,16 @@
+{
+  "agent": "cursor",
+  "default_tags": ["showcase", "external-fixture", "dry-run-only"],
+  "fixture_repo": "https://github.com/jfrog/agent-belt.git",
+  "fixture_ref": "main",
+  "resources": [
+    {
+      "kind": "file",
+      "source": "../../../fixtures/sample-resource.txt",
+      "dest": ".belt/sample-resource.txt",
+      "name": "sample-resource",
+      "version": "v1"
+    }
+  ],
+  "workspace_isolation": "git-worktree"
+}

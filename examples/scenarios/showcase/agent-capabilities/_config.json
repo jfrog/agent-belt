@@ -1,0 +1,4 @@
+{
+  "agent": "cursor",
+  "default_tags": ["showcase", "agent-capabilities", "dry-run-only"]
+}

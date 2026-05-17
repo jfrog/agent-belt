@@ -1,0 +1,2 @@
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"HTTP 429 Too Many Requests \u00b7 rate limit exceeded"}]}}
+{"type":"error","error":"Too many requests - rate limit exceeded"}

@@ -1,0 +1,24 @@
+{
+  "name": "sandboxed_multi_turn_state",
+  "description": "Proves the worktree mount persists across turn boundaries inside the sandbox. Turn 0 asks the agent to write a fact into a file; Turn 1 starts a fresh container (each turn is a separate `docker run`) and asks the agent to read it back. A green run proves the SAME workspace bind survives between containers -- multi-turn scenarios that build state across turns (e.g. `agent fixes bug, then writes test that exercises the fix`) depend on this. The pure-provider equivalent is `test_e2e_artifacts_written_in_one_run_visible_to_next_run_in_same_workspace`; this scenario covers the same invariant with a real agent in the loop.",
+  "tags": ["showcase", "sandbox", "multi-turn", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Create a file named sandbox_state.txt at the workspace root with exactly this single line: persisted-across-turns\nDo not modify any other file. Reply with just the literal word DONE.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["DONE"],
+        "files_modified_any": ["sandbox_state.txt"]
+      }
+    },
+    {
+      "message": "Read the file sandbox_state.txt at the workspace root and reply with just its contents on a single line, with no extra prose, no quotes, no formatting.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["persisted-across-turns"]
+      }
+    }
+  ]
+}

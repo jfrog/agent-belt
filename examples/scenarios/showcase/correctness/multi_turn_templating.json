@@ -1,0 +1,31 @@
+{
+  "name": "multi_turn_templating",
+  "description": "Demonstrates `{{prev.*}}` and `{{turn_N.*}}` placeholders. Turn 0 establishes a value; Turn 1 echoes it via `{{prev.reply_text}}`; Turn 2 reaches back to Turn 0 via `{{turn_0.reply_text}}`. Placeholders are rendered before the agent sees the message; if a template references a turn that has not run yet, the run fails fast.",
+  "tags": ["showcase", "multi-turn", "templating", "real-runnable"],
+  "turns": [
+    {
+      "message": "I'm picking a lucky number for a demo. The number is 47. Acknowledge with a single short sentence that mentions 47.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["47"]
+      }
+    },
+    {
+      "message": "Repeat back exactly what you just said, prefixed with 'Echoing: '. For reference, your previous reply was: {{prev.reply_text}}",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["Echoing", "47"]
+      }
+    },
+    {
+      "message": "Looking back at turn 0, your reply there was: {{turn_0.reply_text}}. Reply with only the number from that message on its own line.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["47"]
+      }
+    }
+  ]
+}

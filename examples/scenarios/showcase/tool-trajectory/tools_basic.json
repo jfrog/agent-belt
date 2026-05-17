@@ -1,0 +1,16 @@
+{
+  "name": "tools_basic",
+  "description": "Demonstrates tools_invoked and tools_invoked_any. Forces a file read and asserts that one of the read-tool aliases was used. Use tools_invoked_any when multiple agents expose different names for the same capability.",
+  "tags": ["showcase", "tool-trajectory", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Read the file pyproject.toml in the current directory and tell me the value of the [project] name field. Reply with only the name, nothing else.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["belt"],
+        "tools_invoked_any": [["Read", "read_file", "View", "Shell"]]
+      }
+    }
+  ]
+}

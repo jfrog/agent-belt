@@ -1,0 +1,6 @@
+# The programmatic-setup fixture ships .claude/ as a checked-in agent
+# provisioning artifact. The root .gitignore drops .claude/ everywhere;
+# re-include it for this fixture only so the agent provisioning data
+# is captured as source.
+!.claude/
+!.claude/**

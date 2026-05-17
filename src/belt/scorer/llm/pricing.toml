@@ -1,0 +1,252 @@
+# LLM judge pricing table.
+#
+# Loaded at import by belt.scorer.llm.pricing. Set BELT_PRICING_FILE to a
+# path with the same schema to fully replace this bundled table; the env
+# override is not merged.
+#
+# Schema (per row, all USD per token):
+#   input_per_token   (required, float)
+#   output_per_token  (required, float)
+#   valid_from        (optional, ISO date the rate took effect)
+#   source_url        (optional, link to the provider pricing page)
+#
+# Keys are lowercase canonical names; aliases live in [aliases]. ollama/*
+# is treated as zero-cost in code (local inference) and needs no entry.
+# Refresh policy: bump valid_from when a rate changes; add new rows for
+# new families.
+
+# OpenAI
+
+[models."gpt-5.4-mini"]
+input_per_token = 0.00000075
+output_per_token = 0.0000045
+valid_from = "2026-03-17"
+source_url = "https://openai.com/api/pricing"
+
+[models."gpt-4.1"]
+input_per_token = 0.000002
+output_per_token = 0.000008
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."gpt-4.1-mini"]
+input_per_token = 0.0000004
+output_per_token = 0.0000016
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."gpt-4.1-nano"]
+input_per_token = 0.0000001
+output_per_token = 0.0000004
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."gpt-4o"]
+input_per_token = 0.0000025
+output_per_token = 0.00001
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."gpt-4o-mini"]
+input_per_token = 0.00000015
+output_per_token = 0.0000006
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."gpt-4-turbo"]
+input_per_token = 0.00001
+output_per_token = 0.00003
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."gpt-4"]
+input_per_token = 0.00003
+output_per_token = 0.00006
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."gpt-3.5-turbo"]
+input_per_token = 0.0000005
+output_per_token = 0.0000015
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."o3"]
+input_per_token = 0.000002
+output_per_token = 0.000008
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."o3-mini"]
+input_per_token = 0.0000011
+output_per_token = 0.0000044
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."o1"]
+input_per_token = 0.000015
+output_per_token = 0.00006
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+[models."o1-mini"]
+input_per_token = 0.0000011
+output_per_token = 0.0000044
+valid_from = "2026-03-01"
+source_url = "https://openai.com/api/pricing"
+
+# Anthropic
+
+[models."claude-sonnet-4-6"]
+input_per_token = 0.000003
+output_per_token = 0.000015
+valid_from = "2026-03-01"
+source_url = "https://www.anthropic.com/pricing"
+
+[models."claude-opus-4-6"]
+input_per_token = 0.000005
+output_per_token = 0.000025
+valid_from = "2026-03-01"
+source_url = "https://www.anthropic.com/pricing"
+
+[models."claude-sonnet-4-5"]
+input_per_token = 0.000003
+output_per_token = 0.000015
+valid_from = "2026-03-01"
+source_url = "https://www.anthropic.com/pricing"
+
+[models."claude-opus-4"]
+input_per_token = 0.000015
+output_per_token = 0.000075
+valid_from = "2026-03-01"
+source_url = "https://www.anthropic.com/pricing"
+
+[models."claude-3-5-sonnet"]
+input_per_token = 0.000003
+output_per_token = 0.000015
+valid_from = "2026-03-01"
+source_url = "https://www.anthropic.com/pricing"
+
+[models."claude-3-5-haiku"]
+input_per_token = 0.0000008
+output_per_token = 0.000004
+valid_from = "2026-03-01"
+source_url = "https://www.anthropic.com/pricing"
+
+[models."claude-3-haiku"]
+input_per_token = 0.00000025
+output_per_token = 0.00000125
+valid_from = "2026-03-01"
+source_url = "https://www.anthropic.com/pricing"
+
+# Google
+
+[models."gemini-2.5-pro"]
+input_per_token = 0.00000125
+output_per_token = 0.00001
+valid_from = "2026-03-01"
+source_url = "https://ai.google.dev/pricing"
+
+[models."gemini-2.5-flash"]
+input_per_token = 0.00000015
+output_per_token = 0.0000006
+valid_from = "2026-03-01"
+source_url = "https://ai.google.dev/pricing"
+
+[models."gemini-2.0-flash"]
+input_per_token = 0.0000001
+output_per_token = 0.0000004
+valid_from = "2026-03-01"
+source_url = "https://ai.google.dev/pricing"
+
+# Azure OpenAI Service (Global standard, pay-as-you-go). Azure publishes
+# rates per canonical model name; deployments are tenant-named so users
+# whose deployment name differs from the canonical model must either
+# rename the deployment or override via BELT_PRICING_FILE.
+# Source: https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service
+
+[models."gpt-5.4"]
+input_per_token = 0.0000025
+output_per_token = 0.000015
+valid_from = "2026-05-01"
+source_url = "https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service"
+
+[models."gpt-5.3"]
+input_per_token = 0.00000175
+output_per_token = 0.000014
+valid_from = "2026-05-01"
+source_url = "https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service"
+
+[models."gpt-5.2"]
+input_per_token = 0.00000175
+output_per_token = 0.000014
+valid_from = "2026-05-01"
+source_url = "https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service"
+
+[models."gpt-5.1"]
+input_per_token = 0.00000125
+output_per_token = 0.00001
+valid_from = "2026-05-01"
+source_url = "https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service"
+
+[models."gpt-5"]
+input_per_token = 0.00000125
+output_per_token = 0.00001
+valid_from = "2025-08-07"
+source_url = "https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service"
+
+[models."gpt-5-mini"]
+input_per_token = 0.00000025
+output_per_token = 0.000002
+valid_from = "2025-08-07"
+source_url = "https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service"
+
+[models."gpt-5-nano"]
+input_per_token = 0.00000005
+output_per_token = 0.0000004
+valid_from = "2025-08-07"
+source_url = "https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service"
+
+# Aliases: provider-prefixed names and alternate spellings that resolve
+# to a canonical key in [models]. Lookup also strips a single provider/
+# prefix at runtime when no alias matches.
+
+[aliases]
+"openai/gpt-5.4-mini" = "gpt-5.4-mini"
+"openai/gpt-4.1" = "gpt-4.1"
+"openai/gpt-4.1-mini" = "gpt-4.1-mini"
+"openai/gpt-4.1-nano" = "gpt-4.1-nano"
+"openai/gpt-4o" = "gpt-4o"
+"openai/gpt-4o-mini" = "gpt-4o-mini"
+"openai/o3" = "o3"
+"openai/o3-mini" = "o3-mini"
+"openai/gpt-5" = "gpt-5"
+"openai/gpt-5-mini" = "gpt-5-mini"
+"openai/gpt-5-nano" = "gpt-5-nano"
+"openai/gpt-5.1" = "gpt-5.1"
+"openai/gpt-5.2" = "gpt-5.2"
+"openai/gpt-5.3" = "gpt-5.3"
+"openai/gpt-5.4" = "gpt-5.4"
+"anthropic/claude-sonnet-4-6" = "claude-sonnet-4-6"
+"anthropic/claude-sonnet-4-5" = "claude-sonnet-4-5"
+"anthropic/claude-opus-4-6" = "claude-opus-4-6"
+"anthropic/claude-opus-4" = "claude-opus-4"
+"anthropic/claude-3-5-sonnet-latest" = "claude-3-5-sonnet"
+"anthropic/claude-3-5-haiku-latest" = "claude-3-5-haiku"
+"google/gemini-2.5-pro" = "gemini-2.5-pro"
+"google/gemini-2.5-flash" = "gemini-2.5-flash"
+"azure/gpt-4o" = "gpt-4o"
+"azure/gpt-4o-mini" = "gpt-4o-mini"
+"azure/gpt-4.1" = "gpt-4.1"
+"azure/gpt-4.1-mini" = "gpt-4.1-mini"
+"azure/gpt-4.1-nano" = "gpt-4.1-nano"
+"azure/gpt-5" = "gpt-5"
+"azure/gpt-5-mini" = "gpt-5-mini"
+"azure/gpt-5-nano" = "gpt-5-nano"
+"azure/gpt-5.1" = "gpt-5.1"
+"azure/gpt-5.2" = "gpt-5.2"
+"azure/gpt-5.3" = "gpt-5.3"
+"azure/gpt-5.4" = "gpt-5.4"
+"azure/gpt-5.4-mini" = "gpt-5.4-mini"
+"azure/o3" = "o3"
+"azure/o3-mini" = "o3-mini"

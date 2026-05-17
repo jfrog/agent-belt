@@ -1,0 +1,2 @@
+{"type":"message","role":"model","content":"request timed out after 60s"}
+{"type":"result","status":"error","error":{"type":"timeout_error","message":"deadline exceeded"},"stats":{"duration_ms":60000}}

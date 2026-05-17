@@ -1,0 +1,17 @@
+{
+  "name": "l3_add_author_validation",
+  "description": "L3: Add input validation and error handling to the authors route",
+  "tags": ["L3", "multi-file", "feature"],
+  "turns": [
+    {
+      "message": "The POST /authors endpoint in src/routes/authors.ts has no input validation. Add proper validation that checks:\n1. name is a non-empty string\n2. bio is a string\n3. born_year is a number\n\nYou can either add validation inline or create a validateAuthorInput middleware in src/middleware/validate.ts (similar to the existing validateBookInput). Return 400 with error messages for invalid input.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/routes/authors.ts"],
+        "git_diff_contains": ["name", "400"]
+      }
+    }
+  ]
+}

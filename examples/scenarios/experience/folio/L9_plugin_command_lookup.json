@@ -1,0 +1,49 @@
+{
+  "name": "L9_plugin_command_lookup",
+  "description": "Proves the plugin manifest (`.claude/plugins/folio-ops/.claude-plugin/plugin.json`) and its bundled command file (`commands/lookup.md`) were discovered via `--plugin-dir`. The command mandates two MCP calls (`mcp__folio__get_customer` + `mcp__folio__list_customer_orders`) for customer C001 (Ada Lovelace), and a strict single-line reply `LOOKUP|C001|<name>|orders=<N>|tag=folio-ops-v1`. The order count is matched with `\\d+` because earlier scenarios in the same run (notably L7) may place additional orders for C001 - the proof is the strict reply shape and the unique `tag=folio-ops-v1`, not the integer N. The literal `tag=folio-ops-v1` exists nowhere except in this plugin's command file, so its appearance combined with the matching MCP calls is hard proof both plugin surfaces loaded.",
+  "tags": [
+    "L9",
+    "plugin",
+    "slash-command",
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "/folio-ops:lookup C001",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions",
+        "--plugin-dir",
+        ".claude/plugins/folio-ops"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "tools_invoked": [
+          "mcp__folio__get_customer",
+          "mcp__folio__list_customer_orders"
+        ],
+        "tool_args_contain": {
+          "mcp__folio__get_customer": {
+            "customer_id": "C001"
+          },
+          "mcp__folio__list_customer_orders": {
+            "customer_id": "C001"
+          }
+        },
+        "tool_result_contains": {
+          "mcp__folio__get_customer": "Ada Lovelace"
+        },
+        "reply_pattern": [
+          "LOOKUP\\|C001\\|Ada Lovelace\\|orders=\\d+\\|tag=folio-ops-v1"
+        ],
+        "not_contains": [
+          "unknown command",
+          "not a recognized command",
+          "I don't know what /folio-ops"
+        ]
+      }
+    }
+  ],
+  "llm_scorer_instruction": "Verify the agent (1) recognised /folio-ops:lookup as a plugin-namespaced slash command, (2) called both mcp__folio__get_customer and mcp__folio__list_customer_orders with customer_id=C001, (3) replied in the strict LOOKUP|C001|Ada Lovelace|orders=<N>|tag=folio-ops-v1 format with no preamble (N may vary across runs because earlier scenarios mutate C001's order count)."
+}

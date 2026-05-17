@@ -1,0 +1,21 @@
+{
+  "name": "l2_validate_url",
+  "description": "L2: Add URL validation to the shorten handler",
+  "tags": ["L2", "single-file", "bugfix"],
+  "turns": [
+    {
+      "message": "The handleShorten function in internal/handler/handler.go only checks for empty URLs but doesn't validate the format. Add validation that rejects URLs that aren't valid HTTP or HTTPS URLs. Use net/url.Parse and check the scheme.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["internal/handler/handler.go"],
+        "files_not_modified": ["go.mod", "cmd/server/main.go"],
+        "git_diff_contains": ["url.Parse", "http"]
+      },
+      "state_expect": {
+        "files_contain": {"internal/handler/handler.go": "url.Parse"}
+      }
+    }
+  ]
+}

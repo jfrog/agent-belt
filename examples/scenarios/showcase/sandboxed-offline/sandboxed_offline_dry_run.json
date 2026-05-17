@@ -1,0 +1,14 @@
+{
+  "name": "sandboxed_offline_dry_run",
+  "description": "Demonstrates SandboxProfile.network_policy='none' for kernel-enforced offline runs. Under this policy the docker provider passes --network=none so the container has no network interfaces other than loopback; outbound TCP/UDP/DNS all fail at the kernel level (EHOSTUNREACH/ENETUNREACH). Use it for scenarios that operate purely on local files (offline code edits, fixture-only tasks). Tagged dry-run-only because every shipped LLM-using agent calls its provider API on first turn and would error immediately under network_policy='none' -- there is currently no offline reference agent. To exercise this scenario for real: build an image around an offline tool (e.g. a self-contained linter, a code formatter) and a matching agent adapter whose turns operate only on files under /work. The schema, the runner argv (--network=none), and the kernel-level enforcement are unit-tested in test_docker_provider.py and e2e-tested with real docker in test_docker_e2e.py::test_e2e_network_policy_none_*.",
+  "tags": ["sandbox", "network-isolation", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Read the file calculator.py and tell me what the divide function does. Reply with one sentence and nothing else.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+# GitHub Release notes configuration. Used by ``gh release create
+# --generate-notes`` (see ``.github/workflows/release.yml``) to categorise
+# merged PRs by label.
+#
+# Category titles and labels track the JFrog OSS reference set used by
+# jfrog-cli, frogbot, artifactory-client-java, and jfrog-client-go. Keep
+# the wording and emoji identical so the GitHub Releases page for this
+# project reads in the same voice as the rest of the JFrog OSS family.
+
+changelog:
+  exclude:
+    labels:
+      - "ignore for release"
+  categories:
+    - title: Breaking Changes 🚨
+      labels:
+        - "breaking change"
+    - title: Exciting New Features 🎉
+      labels:
+        - "new feature"
+    - title: Improvements 🌱
+      labels:
+        - "improvement"
+    - title: Bug Fixes 🛠
+      labels:
+        - "bug"
+    - title: Other Changes 📚
+      labels:
+        - "*"

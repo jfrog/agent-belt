@@ -1,0 +1,61 @@
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-yaml
+    -   id: check-added-large-files
+
+-   repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args:
+             - "--project=belt"
+             - "--profile=black"
+
+-   repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+    -   id: black
+        language_version: python3
+        args: ["--line-length=120"]
+
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.10
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+-   repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.17.2
+    hooks:
+      - id: markdownlint-cli2
+
+-   repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+# Python SAST: catches subprocess injection, hardcoded credentials, weak crypto,
+# unsafe deserialization, etc. Scoped to ``src/`` and ``plugins/`` only - tests
+# intentionally simulate exfil patterns (see tests/runner/sandbox/test_docker_e2e.py)
+# to *prove* non-leakage and would otherwise produce noise. Skip list lives in
+# pyproject.toml ([tool.bandit]) so contributors and CI agree.
+-   repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        files: ^(src|plugins)/.*\.py$
+        additional_dependencies: ["bandit[toml]"]
+
+-   repo: local
+    hooks:
+    -   id: check-design
+        name: Design principles
+        entry: python scripts/check_design.py
+        language: python
+        pass_filenames: false
+        types: [python]

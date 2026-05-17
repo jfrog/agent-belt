@@ -1,0 +1,39 @@
+name: Bug Report
+description: Report a bug in agent-belt
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal command or code to trigger the bug
+      placeholder: |
+        ```bash
+        belt eval examples/scenarios/ --modes rules
+        ```
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, belt version, agent
+      placeholder: |
+        - OS: macOS 15
+        - Python: 3.13.0
+        - agent-belt: 0.1.0
+        - Agent: claude-code
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Output
+      description: Error messages, tracebacks, or score.json content
+      render: shell

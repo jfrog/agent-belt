@@ -1,0 +1,11 @@
+- params:
+    git:
+      repoName: agent-belt
+      branches:
+        - main
+    scan:
+      projects:
+        - workingDirs:
+            - "."
+      excludePatterns:
+        - "examples/**"

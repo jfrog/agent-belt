@@ -1,0 +1,21 @@
+{
+  "name": "tool_result",
+  "description": "Demonstrates tool_result_contains and tool_result_pattern. Asserts that when the named tool is invoked, its result contains the expected substring or matches the regex. Useful for verifying the agent read the right content or received the expected API response.",
+  "tags": ["showcase", "tool-trajectory", "single-turn", "tool-result", "real-runnable"],
+  "turns": [
+    {
+      "message": "Read the file pyproject.toml in the current directory and tell me the project name. Use the Read tool with the exact path 'pyproject.toml'.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "tools_invoked_any": [["Read"]],
+        "tool_result_contains": {
+          "Read": "belt"
+        },
+        "tool_result_pattern": {
+          "Read": "name\\s*=\\s*\"agent-belt\""
+        }
+      }
+    }
+  ]
+}

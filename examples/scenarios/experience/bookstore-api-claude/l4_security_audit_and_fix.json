@@ -1,0 +1,42 @@
+{
+  "name": "l4_security_audit_and_fix",
+  "description": "L4: Multi-turn - audit for security issues, fix the critical one, add a test",
+  "tags": ["L4", "multi-turn", "security", "investigate-fix"],
+  "llm_scorer_instruction": "Evaluate whether the agent identified real security vulnerabilities (SQL injection, token expiry bypass), prioritized correctly, produced a correct fix, and wrote a meaningful test. Penalize if the agent missed the SQL injection or introduced new issues.",
+  "turns": [
+    {
+      "message": "Perform a security audit of this Express API. Read all source files and identify every security vulnerability. For each, state the file, the vulnerability type, and the severity (critical/high/medium/low).",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["injection"],
+        "tools_invoked_any": [["Read", "read_file", "View"]],
+        "max_llm_turns": 25
+      }
+    },
+    {
+      "message": "Fix the most critical security vulnerability you found. Make the minimal change needed.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/services/bookService.ts", "src/middleware/auth.ts"]
+      },
+      "state_expect": {
+        "capture_git_diff": true
+      }
+    },
+    {
+      "message": "Add a test that verifies the vulnerability is fixed. Put it in the tests/ directory.",
+      "flags": ["--permission-mode", "bypassPermissions"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "git_diff_contains": ["test", "inject"]
+      },
+      "state_expect": {
+        "capture_git_diff": true
+      }
+    }
+  ]
+}

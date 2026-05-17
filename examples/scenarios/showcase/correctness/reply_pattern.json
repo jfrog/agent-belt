@@ -1,0 +1,21 @@
+{
+  "name": "reply_pattern",
+  "description": "Demonstrates ``reply_pattern`` for strict reply-format assertions. Asks for a pipe-separated record on a single line and asserts the structure with regexes (anchored, no preamble). Unlike ``contains``, ``reply_pattern`` matches against ``reply_text`` only - CLI noise (debug prints, agent-trace dumps, stderr) cannot produce a false green. ALL patterns must match.",
+  "tags": ["showcase", "correctness", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Reply with EXACTLY this format on a single line, nothing else: ORDER|42|Ada Lovelace|shipped|1Z999AA10123456784",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "reply_pattern": [
+          "^ORDER\\|",
+          "\\|42\\|",
+          "\\|Ada Lovelace\\|",
+          "\\|shipped\\|",
+          "\\|1Z999AA10123456784$"
+        ]
+      }
+    }
+  ]
+}

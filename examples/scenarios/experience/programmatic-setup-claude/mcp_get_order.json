@@ -1,0 +1,32 @@
+{
+  "name": "mcp_get_order",
+  "description": "Proves the project-local orders_db MCP server (registered via .mcp.json + .claude/settings.json.enableAllProjectMcpServers) was discovered AND invoked over the MCP protocol. Triggered by a realistic operator question that does not name the server or the tool, so the test exercises agent-side discovery rather than instruction-following. Hard assertions: (a) the agent invoked the namespaced MCP tool `mcp__orders_db__get_order`, (b) it passed `order_id: 42`, (c) the tool *result* (server-side payload, not the model's reply) contained `AGB-EVAL-42` and `Ada Lovelace`. `forbidden_tools: Read, Bash` closes the loophole where the agent could `cat mcp_servers/orders_db/server.py` to extract the data without going through the protocol.",
+  "tags": [
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "Hey, can you check on order 42 for me? I need the customer name and the tracking number.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "tools_invoked": ["mcp__orders_db__get_order"],
+        "tool_args_contain": {
+          "mcp__orders_db__get_order": {"order_id": "42"}
+        },
+        "tool_result_contains": {
+          "mcp__orders_db__get_order": "AGB-EVAL-42"
+        },
+        "tool_result_pattern": {
+          "mcp__orders_db__get_order": "ada\\s+lovelace"
+        },
+        "forbidden_tools": ["Read", "Bash"],
+        "contains": ["AGB-EVAL-42", "Ada Lovelace"]
+      },
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "multi_turn_with_expectations",
+  "description": "Non-trivial template scenario: exercises multi-turn dialogue, tool-trajectory checks (tools_invoked, only_used_tools, tool_args_contain), latency budgets (max_total_seconds), and content negation (not_contains). Each Turn maps to one EchoAgentAdapter.execute() call.",
+  "tags": ["example", "multi-turn", "non-trivial"],
+  "turns": [
+    {
+      "message": "ping",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["ping"],
+        "not_contains": ["pong", "error"],
+        "tools_invoked": ["echo"],
+        "only_used_tools": ["echo"],
+        "tool_args_contain": {
+          "echo": {"text": "echo: ping"}
+        },
+        "max_total_seconds": 5.0
+      }
+    },
+    {
+      "message": "second turn",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["second turn"],
+        "tools_invoked_in_order": ["echo"],
+        "max_total_seconds": 5.0
+      }
+    }
+  ]
+}

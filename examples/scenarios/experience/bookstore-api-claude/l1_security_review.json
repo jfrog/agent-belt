@@ -1,0 +1,17 @@
+{
+  "name": "l1_security_review",
+  "description": "L1: Ask the agent to review the bookstore API for security issues",
+  "tags": ["L1", "read-only", "security"],
+  "turns": [
+    {
+      "message": "Review this TypeScript Express API for security vulnerabilities. Check all files in src/ and report each issue with its file location, severity, and recommended fix.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["injection"],
+        "tools_invoked_any": [["Read", "read_file", "View", "Grep", "grep"]],
+        "max_llm_turns": 20
+      }
+    }
+  ]
+}

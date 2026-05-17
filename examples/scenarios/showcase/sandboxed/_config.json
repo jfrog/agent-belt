@@ -1,0 +1,13 @@
+{
+  "agent": "cursor",
+  "default_tags": ["showcase", "sandbox", "dry-run-only"],
+  "working_dir": "../../../fixtures/sample-project",
+  "workspace_isolation": "git-worktree",
+  "workspace_ref": "HEAD",
+  "sandbox": {
+    "provider": "docker",
+    "image": "agent-belt-sandbox-cursor:dev",
+    "allowed_hosts": ["api.cursor.sh"],
+    "env_passthrough": ["CURSOR_API_KEY"]
+  }
+}

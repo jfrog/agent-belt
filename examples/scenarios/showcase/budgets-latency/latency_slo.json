@@ -1,0 +1,16 @@
+{
+  "name": "latency_slo",
+  "description": "Demonstrates max_total_seconds - the wall-clock budget every agent populates. The bound is loose to keep the demo robust; tighten it to enforce a real SLO. For per-stream-event budgets (ttfe/ttft/ttlt), see latency_streaming_dry_run.json.",
+  "tags": ["showcase", "latency", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Reply with the single word 'pong' on its own line. Nothing else.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["pong"],
+        "max_total_seconds": 120.0
+      }
+    }
+  ]
+}

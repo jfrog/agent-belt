@@ -1,0 +1,15 @@
+{
+  "name": "verdict_scales_demo",
+  "description": "Demonstrates all four verdict-scale combinations on one scenario: ternary, ternary+inconclusive, binary, binary+inconclusive. Run with --modes llm to see each dimension graded against its own scale (low/medium/high or pass/fail, with inconclusive available where opted in). The four `llm_dimensions` live in the sibling _config.json. See SCORING.md section 2.5 for the full matrix.",
+  "tags": ["showcase", "verdict-scales", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "What is the capital of France? Reply with just the city name on its own line.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["Paris"]
+      }
+    }
+  ]
+}

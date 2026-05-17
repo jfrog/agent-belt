@@ -1,0 +1,40 @@
+{
+  "name": "skill_invoked",
+  "description": "Proves the project-local Claude Code skill at `.claude/skills/orders-helper/SKILL.md` was auto-discovered AND consulted. The user message is a realistic, content-triggered operator question. It names neither the skill nor the MCP server, so a green check tests skill *discovery and routing*, not the agent's ability to follow an explicit instruction. Triple-bound proof: (a) `skills_invoked: [orders-helper]` matches Claude Code's first-class Skill tool with `args.skill == \"orders-helper\"` (Tier 1 in skill_invoked helper), (b) the skill's mandated downstream MCP call `mcp__orders_db__get_order` with `order_id: 42` actually fired, (c) the skill's mandated reply marker `[via orders-helper]` is present on the final line.",
+  "tags": [
+    "skill",
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "What's the status of order 42, and who's the customer? I also need the tracking number.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": ["orders-helper"],
+        "tools_invoked": ["mcp__orders_db__get_order"],
+        "tool_args_contain": {
+          "mcp__orders_db__get_order": {"order_id": "42"}
+        },
+        "tool_result_contains": {
+          "mcp__orders_db__get_order": "AGB-EVAL-42"
+        },
+        "contains": [
+          "AGB-EVAL-42",
+          "Ada Lovelace",
+          "shipped",
+          "[via orders-helper]"
+        ],
+        "not_contains": [
+          "I don't have",
+          "no access",
+          "cannot find"
+        ]
+      },
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"request timed out after 60s"}]}}
+{"type":"error","error":"deadline exceeded - request timed out"}

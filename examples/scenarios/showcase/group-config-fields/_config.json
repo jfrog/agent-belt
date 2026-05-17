@@ -1,0 +1,18 @@
+{
+  "agent": "cursor",
+  "default_tags": ["showcase", "group-config"],
+  "llm_dimensions": [
+    {
+      "name": "frugality",
+      "description": "Did the agent answer with the minimum necessary content?",
+      "high": "answered in one short line, no preamble, no caveats",
+      "medium": "answered correctly but with one or two extra sentences",
+      "low": "verbose, repeated the question, or hedged unnecessarily",
+      "evidence_hints": "reply length, presence of filler ('Sure!', 'Of course,'), repeated context"
+    }
+  ],
+  "llm_dimensions_extend_defaults": true,
+  "sandbox": {
+    "provider": "host"
+  }
+}

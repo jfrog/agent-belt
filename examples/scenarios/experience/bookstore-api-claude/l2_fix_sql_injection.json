@@ -1,0 +1,21 @@
+{
+  "name": "l2_fix_sql_injection",
+  "description": "L2: Fix the SQL injection vulnerability in bookService.ts",
+  "tags": ["L2", "single-file", "security-fix"],
+  "turns": [
+    {
+      "message": "The searchBooks function in src/services/bookService.ts has a SQL injection vulnerability - it uses string interpolation instead of a parameterized query. Fix it to use a parameterized query with proper escaping.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/services/bookService.ts"],
+        "files_not_modified": ["package.json", "tsconfig.json"],
+        "git_diff_contains": ["?"]
+      },
+      "state_expect": {
+        "files_contain": {"src/services/bookService.ts": "?"}
+      }
+    }
+  ]
+}

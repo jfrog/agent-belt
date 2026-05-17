@@ -1,0 +1,16 @@
+{
+  "name": "l1_find_concurrency_bug",
+  "description": "L1: Find the goroutine-safety bug in MemoryStore",
+  "tags": ["L1", "read-only", "bug-finding"],
+  "turns": [
+    {
+      "message": "Read internal/store/memory.go and analyze it for concurrency issues. This store is used in an HTTP server where multiple goroutines handle requests simultaneously. Is it safe?",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["mutex"],
+        "max_llm_turns": 3
+      }
+    }
+  ]
+}

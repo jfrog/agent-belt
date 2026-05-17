@@ -1,0 +1,9 @@
+This file is installed into the agent worktree by
+``GroupConfig.resources`` in ``examples/scenarios/showcase/external-fixture/``.
+
+It exists only to demonstrate the resource-install mechanism: the
+scenario asks the agent to read the file and confirm a marker, and the
+``resource_lock.json`` written alongside the scenario's outcomes pins
+the SHA-256 of these bytes.
+
+MARKER: belt-fixture-resource-v1

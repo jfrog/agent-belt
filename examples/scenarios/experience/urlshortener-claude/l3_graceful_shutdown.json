@@ -1,0 +1,20 @@
+{
+  "name": "l3_graceful_shutdown",
+  "description": "L3: Add graceful shutdown to main.go using signal handling",
+  "tags": ["L3", "multi-file", "feature"],
+  "turns": [
+    {
+      "message": "The server in cmd/server/main.go doesn't handle graceful shutdown. Refactor it to:\n1. Use http.Server instead of http.ListenAndServe\n2. Listen for SIGTERM and SIGINT signals\n3. On signal, call server.Shutdown with a 10-second timeout context\n4. Log the shutdown process\n\nUse signal.NotifyContext or os/signal.Notify.",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["cmd/server/main.go"],
+        "git_diff_contains": ["Shutdown", "signal"]
+      },
+      "state_expect": {
+        "files_contain": {"cmd/server/main.go": "Shutdown"}
+      }
+    }
+  ]
+}

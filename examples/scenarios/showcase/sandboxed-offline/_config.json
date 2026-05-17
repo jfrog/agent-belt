@@ -1,0 +1,12 @@
+{
+  "agent": "cursor",
+  "default_tags": ["showcase", "sandbox", "network-isolation", "dry-run-only"],
+  "working_dir": "../../../fixtures/sample-project",
+  "workspace_isolation": "git-worktree",
+  "workspace_ref": "HEAD",
+  "sandbox": {
+    "provider": "docker",
+    "image": "agent-belt-sandbox-cursor:dev",
+    "network_policy": "none"
+  }
+}

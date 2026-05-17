@@ -1,0 +1,67 @@
+{
+  "name": "L7_place_then_refund_multiturn",
+  "description": "Multi-turn flow. Turn 1: customer C001 orders 1 copy of 'Project Hail Mary' - the agent must look up the canonical ISBN and call `place_order`. Turn 2: customer changes their mind; the agent must remember the order it just placed (in-session context) and refund it via `refund_order`. Tests that the agent (a) chains tools correctly across turns, (b) preserves order-id context, (c) applies the skill marker on both turns.",
+  "tags": [
+    "L7",
+    "multi-turn",
+    "place-then-refund"
+  ],
+  "turns": [
+    {
+      "message": "Hi Folio. This is C001 (Ada Lovelace). I'd like to order one copy of 'Project Hail Mary' by Andy Weir please.",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": [
+          "bookstore-assistant"
+        ],
+        "tools_invoked": [
+          "mcp__folio__place_order"
+        ],
+        "tool_args_contain": {
+          "mcp__folio__place_order": {
+            "customer_id": "C001"
+          }
+        },
+        "tool_result_contains": {
+          "mcp__folio__place_order": "placed"
+        },
+        "contains": [
+          "[Folio support"
+        ]
+      }
+    },
+    {
+      "message": "Actually, scratch that - please refund the order you just placed.",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": [
+          "bookstore-assistant"
+        ],
+        "tools_invoked": [
+          "mcp__folio__refund_order"
+        ],
+        "tool_result_contains": {
+          "mcp__folio__refund_order": "refunded"
+        },
+        "forbidden_tools": [
+          "mcp__folio__issue_store_credit",
+          "mcp__folio__escalate_to_human"
+        ],
+        "contains": [
+          "[Folio support"
+        ]
+      }
+    }
+  ],
+  "llm_scorer_instruction": "Turn 2: Verify the agent (1) referenced the order it placed in turn 1 (its order_id should appear in the reply), (2) called refund_order on that order without asking the user to repeat the id, (3) did NOT call issue_store_credit or escalate_to_human (the order was just placed; Tier 1 applies)."
+}

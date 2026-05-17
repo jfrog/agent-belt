@@ -1,0 +1,2 @@
+{"type":"assistant.message","data":{"content":"HTTP 429 Too Many Requests \u00b7 rate limit exceeded"}}
+{"type":"result","data":{"sessionId":"s"},"exitCode":1}

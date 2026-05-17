@@ -1,0 +1,15 @@
+{
+  "name": "external_fixture_demo",
+  "description": "Demonstrates ``fixture_repo`` + ``resources`` in the sibling _config.json. The runner clones the belt repo once into the per-run cache, every scenario gets an isolated worktree off that clone, and the listed resource is copied into ``.belt/sample-resource.txt`` before the agent starts. Tagged ``dry-run-only`` because the clone runs against GitHub (not deterministic for offline CI). To exercise it locally: belt eval examples/scenarios/showcase/external-fixture --tags dry-run-only --dry-run.",
+  "tags": ["showcase", "external-fixture", "dry-run-only", "single-turn"],
+  "turns": [
+    {
+      "message": "Read .belt/sample-resource.txt and reply with just the MARKER line you find inside it.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["belt-fixture-resource-v1"]
+      }
+    }
+  ]
+}

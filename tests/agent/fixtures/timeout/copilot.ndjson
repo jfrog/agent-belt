@@ -1,0 +1,2 @@
+{"type":"assistant.message","data":{"content":"request timed out after 60s"}}
+{"type":"result","data":{"sessionId":"s"},"exitCode":1}

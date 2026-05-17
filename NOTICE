@@ -1,0 +1,108 @@
+agent-belt
+(c) 2026 JFrog Ltd.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+=============================================================================
+
+This product includes software developed by:
+
+agent-belt is an original work and does not incorporate code forked
+or adapted from another upstream project. This section is reserved
+per Apache-2.0 §4.4 for any future derivations.
+
+=============================================================================
+
+Third-Party Dependencies:
+
+Direct Python runtime dependencies (see pyproject.toml [project] dependencies).
+These ship as install-time requirements of the public `agent-belt` wheel.
+License terms for each package apply; see the respective project repositories
+or PyPI metadata for full notices.
+
+- backoff
+  Licensed under the MIT License
+  https://github.com/litl/backoff
+
+- filelock
+  Licensed under The Unlicense
+  https://github.com/tox-dev/filelock
+
+- httpx
+  Licensed under the BSD-3-Clause License
+  https://github.com/encode/httpx
+
+- loguru
+  Licensed under the MIT License
+  https://github.com/Delgan/loguru
+
+- pydantic
+  Licensed under the MIT License
+  https://github.com/pydantic/pydantic
+
+- python-dotenv
+  Licensed under the BSD-3-Clause License
+  https://github.com/theskumar/python-dotenv
+
+- pyyaml
+  Licensed under the MIT License
+  https://github.com/yaml/pyyaml
+
+- rich
+  Licensed under the MIT License
+  https://github.com/Textualize/rich
+
+=============================================================================
+
+Direct Python development dependencies (see pyproject.toml
+[project.optional-dependencies] dev and [dependency-groups] dev). These are
+contributor-only tooling installed via `pip install -e ".[dev]"` or
+`uv sync`; they are not runtime requirements of the wheel and do not reach
+end users of `pip install agent-belt`.
+
+- black
+  Licensed under the MIT License
+  https://github.com/psf/black
+
+- isort
+  Licensed under the MIT License
+  https://github.com/PyCQA/isort
+
+- pre-commit
+  Licensed under the MIT License
+  https://github.com/pre-commit/pre-commit
+
+- pytest
+  Licensed under the MIT License
+  https://github.com/pytest-dev/pytest
+
+- ruff
+  Licensed under the MIT License
+  https://github.com/astral-sh/ruff
+
+- setuptools
+  Licensed under the MIT License
+  https://github.com/pypa/setuptools
+
+=============================================================================
+
+For a full SBOM including transitive dependencies (resolved against the
+specific environment used to build or run agent-belt), use pip-licenses:
+
+    pip install -e ".[dev]"
+    pip install pip-licenses
+    pip-licenses --format=markdown --with-urls --with-license-file
+
+Each wheel's License / License-Expression metadata (PEP 639) is the
+authoritative source for compliance questions about a specific installed
+version.

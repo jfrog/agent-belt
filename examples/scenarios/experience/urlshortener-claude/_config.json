@@ -1,0 +1,7 @@
+{
+  "agent": "claude-code",
+  "working_dir": "../../../fixtures/urlshortener",
+  "workspace_isolation": "git-worktree",
+  "workspace_ref": "HEAD",
+  "default_tags": ["experience-campaign", "urlshortener"]
+}

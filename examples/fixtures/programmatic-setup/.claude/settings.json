@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "mcp__orders_db__get_order",
+      "mcp__orders_db__list_orders",
+      "Read"
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}

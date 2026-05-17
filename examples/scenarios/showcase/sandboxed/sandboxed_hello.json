@@ -1,0 +1,15 @@
+{
+  "name": "sandboxed_hello",
+  "description": "Smoke scenario for the sandbox provider extension point. The sibling _config.json declares ``provider: docker`` plus a real image, hosts allow-list, and env passthrough; running this scenario unmodified executes the cursor agent inside a container with --cap-drop=ALL, --read-only rootfs, the worktree as the only writable mount, and CURSOR_API_KEY forwarded by name. Build the image first per examples/sandbox-images/README.md, or override with ``--sandbox host`` to run the same scenario without isolation when iterating without docker. The agent reply trivially contains 'Paris', so a green run proves both the scoring path and the sandbox handoff land cleanly.",
+  "tags": ["showcase", "sandbox", "single-turn", "dry-run-only"],
+  "turns": [
+    {
+      "message": "What is the capital of France? Reply with just the city name on its own line.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["Paris"]
+      }
+    }
+  ]
+}

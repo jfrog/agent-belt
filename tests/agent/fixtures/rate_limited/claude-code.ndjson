@@ -1,0 +1,2 @@
+{"type":"assistant","content":[{"type":"text","text":"HTTP 429 Too Many Requests \u00b7 rate limit exceeded"}]}
+{"type":"result","is_error":true,"session_id":"s","duration_ms":12}

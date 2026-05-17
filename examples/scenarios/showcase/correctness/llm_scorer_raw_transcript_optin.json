@@ -1,0 +1,18 @@
+{
+  "name": "llm_scorer_raw_transcript_optin",
+  "description": "Demonstrates `llm_scorer_raw_transcript: true`, which appends the agent's full raw CLI transcript to the LLM judge prompt as an extra `## Raw CLI Output` section alongside the default structured view. Opt in only when the evaluation depends on event-level transcript inspection.",
+  "tags": ["showcase", "correctness", "single-turn", "llm-scored", "real-runnable"],
+  "llm_scorer_raw_transcript": true,
+  "llm_scorer_instruction": "Use the structured `## Agent Output` section to check the reply; consult `## Raw CLI Output` only if event-level inspection is required.",
+  "turns": [
+    {
+      "message": "What is the capital of France? Reply with just the city name on its own line.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["Paris"],
+        "not_contains": ["I don't know", "I cannot", "as an AI"]
+      }
+    }
+  ]
+}

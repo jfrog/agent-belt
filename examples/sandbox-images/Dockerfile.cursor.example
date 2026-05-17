@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+#
+# Worked example: derive a Cursor-agent sandbox image from the generic base.
+#
+# This file is illustrative -- it shows the BYOI pattern. The framework does
+# not maintain per-agent Dockerfiles; users (or community packages) ship
+# images for the agents they care about. Keep one Dockerfile per agent so
+# the install line stays trivial to read and audit.
+#
+# Build:
+#   docker build -t agent-belt-sandbox-generic:dev -f examples/sandbox-images/Dockerfile.generic .
+#   docker build -t agent-belt-sandbox-cursor:dev  -f examples/sandbox-images/Dockerfile.cursor.example .
+#
+# Use from a scenario group's _config.json:
+#   "sandbox": {
+#     "provider": "docker",
+#     "image": "agent-belt-sandbox-cursor:dev",
+#     "env_passthrough": ["CURSOR_API_KEY"]
+#   }
+FROM agent-belt-sandbox-generic:dev
+
+USER root
+RUN curl -fsSL https://cursor.com/install -o /tmp/install.sh \
+    && bash /tmp/install.sh \
+    && rm /tmp/install.sh \
+    && mv /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
+    && chmod +x /usr/local/bin/cursor-agent
+
+USER belt
+WORKDIR /work

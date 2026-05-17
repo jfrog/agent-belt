@@ -1,0 +1,2 @@
+{"type":"text","part":{"text":"I can't help with that request."}}
+{"type":"error","error":{"name":"RefusalError","data":{"message":"model refused"}}}

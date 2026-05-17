@@ -1,0 +1,15 @@
+{
+  "name": "hello",
+  "description": "Smoke test: the echo agent returns the input message verbatim. Verifies the most basic of expectations (no_errors, has_reply, contains).",
+  "tags": ["example", "single-turn", "smoke"],
+  "turns": [
+    {
+      "message": "Hello, world!",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["Hello, world!"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "l3_add_delete_command",
+  "description": "L3: Add a 'delete' command that touches cli.py, storage.py, and tests",
+  "tags": ["L3", "multi-file", "feature"],
+  "turns": [
+    {
+      "message": "Add a 'delete' command to the CLI that removes a task by ID. This requires:\n1. Add a delete_task(task_id, path) function to storage.py\n2. Add the 'delete' subcommand to cli.py with a task_id argument\n3. Add a test for delete_task in tests/test_storage.py",
+      "flags": ["--permission-mode", "acceptEdits"],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "files_modified_any": ["src/tasktracker/cli.py", "src/tasktracker/storage.py"],
+        "git_diff_contains": ["delete"]
+      },
+      "state_expect": {
+        "files_contain": {
+          "src/tasktracker/cli.py": "delete",
+          "src/tasktracker/storage.py": "delete"
+        }
+      }
+    }
+  ]
+}

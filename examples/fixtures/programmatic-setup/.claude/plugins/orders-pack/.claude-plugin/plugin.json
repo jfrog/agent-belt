@@ -1,0 +1,5 @@
+{
+  "name": "orders-pack",
+  "version": "1.0.0",
+  "description": "Bundles a slash command (report-orders) and a skill (processing-watch) that both reach the workspace's orders_db MCP server."
+}

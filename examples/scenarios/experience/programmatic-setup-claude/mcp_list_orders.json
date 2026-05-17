@@ -1,0 +1,33 @@
+{
+  "name": "mcp_list_orders",
+  "description": "Proves the orders_db MCP server received a *filtered* list_orders call. Triggered by a realistic operator request that names neither the server nor the tool. Hard assertions: (a) the agent invoked `mcp__orders_db__list_orders`, (b) the call carried `status: \"delivered\"` (NOT just any list call), (c) the server-side result contained `AGB-EVAL-44` and `Grace Hopper`. `forbidden_tools: Read, Bash` rules out reading the source file as a substitute for protocol use.",
+  "tags": [
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "Pull up every delivered order for me - just the order IDs and tracking numbers please.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "tools_invoked": ["mcp__orders_db__list_orders"],
+        "tool_args_contain": {
+          "mcp__orders_db__list_orders": {"status": "delivered"}
+        },
+        "tool_result_contains": {
+          "mcp__orders_db__list_orders": "AGB-EVAL-44"
+        },
+        "tool_result_pattern": {
+          "mcp__orders_db__list_orders": "grace\\s+hopper"
+        },
+        "forbidden_tools": ["Read", "Bash"],
+        "contains": ["44", "AGB-EVAL-44", "Grace Hopper"],
+        "not_contains": ["AGB-EVAL-42", "Alan Turing"]
+      },
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ]
+    }
+  ]
+}

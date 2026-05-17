@@ -1,0 +1,15 @@
+{
+  "name": "cost_budget_dry_run",
+  "description": "Demonstrates max_cost_usd. Dry-run only because not every agent emits cost: cursor and gemini do not, while claude-code and codex do. To enable, run with --agent claude-code (or another cost-emitting agent) without --dry-run; the scorer will compare TurnOutput.cost_usd against the cap.",
+  "tags": ["showcase", "budgets", "cost", "dry-run-only"],
+  "turns": [
+    {
+      "message": "What is 7 + 8? Reply with just the number.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "max_cost_usd": 0.5
+      }
+    }
+  ]
+}

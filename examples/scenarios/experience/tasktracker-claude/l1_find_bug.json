@@ -1,0 +1,17 @@
+{
+  "name": "l1_find_bug",
+  "description": "L1: Ask the agent to find the race condition bug in storage.py",
+  "tags": ["L1", "read-only", "bug-finding"],
+  "turns": [
+    {
+      "message": "Read src/tasktracker/storage.py and identify any concurrency bugs. Explain the issue and its potential impact.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["lock"],
+        "tools_invoked_any": [["Read", "read_file", "View"]],
+        "max_llm_turns": 3
+      }
+    }
+  ]
+}

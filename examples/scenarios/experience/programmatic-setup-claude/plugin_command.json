@@ -1,0 +1,41 @@
+{
+  "name": "plugin_command",
+  "description": "Proves both the plugin manifest (`.claude/plugins/orders-pack/.claude-plugin/plugin.json`) and the bundled command file (`commands/report-orders.md`) were discovered via `--plugin-dir`. The command mandates (a) `mcp__orders_db__list_orders` with no arguments, (b) a strict single-line reply `REPORT|total=N|shipped=N|processing=N|delivered=N|tag=orders-pack-v1`. The literal `tag=orders-pack-v1` exists nowhere except in this plugin's command file, so seeing it in the reply, combined with the matching MCP call, is hard proof both surfaces loaded. NOTE: strict-format enforcement is approximated by `contains` + `not_contains` until #368 (reply_pattern) lands.",
+  "tags": [
+    "plugin",
+    "slash-command",
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "/orders-pack:report-orders",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "tools_invoked": ["mcp__orders_db__list_orders"],
+        "tool_result_contains": {
+          "mcp__orders_db__list_orders": "AGB-EVAL-44"
+        },
+        "contains": [
+          "REPORT|total=3",
+          "|shipped=1",
+          "|processing=1",
+          "|delivered=1",
+          "|tag=orders-pack-v1"
+        ],
+        "not_contains": [
+          "[via orders-helper]",
+          "[via processing-watch]",
+          "I don't have",
+          "```"
+        ]
+      },
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions",
+        "--plugin-dir",
+        ".claude/plugins/orders-pack"
+      ]
+    }
+  ]
+}

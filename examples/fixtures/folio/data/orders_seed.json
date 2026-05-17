@@ -1,0 +1,79 @@
+[
+  {
+    "order_id": 1001,
+    "customer_id": "C001",
+    "isbn": "978-0441172719",
+    "qty": 1,
+    "unit_price_usd": 18.99,
+    "status": "delivered",
+    "placed_days_ago": 7,
+    "delivered_days_ago": 5,
+    "_note": "Ada, Dune, within 30-day refund window -> eligible for refund_order"
+  },
+  {
+    "order_id": 1002,
+    "customer_id": "C002",
+    "isbn": "978-1449373320",
+    "qty": 2,
+    "unit_price_usd": 49.99,
+    "status": "delivered",
+    "placed_days_ago": 47,
+    "delivered_days_ago": 45,
+    "_note": "Grace, DDIA x2, 45 days post-delivery -> store credit only"
+  },
+  {
+    "order_id": 1003,
+    "customer_id": "C003",
+    "isbn": "978-0451524935",
+    "qty": 1,
+    "unit_price_usd": 12.99,
+    "status": "delivered",
+    "placed_days_ago": 92,
+    "delivered_days_ago": 90,
+    "_note": "Alan, 1984, 90 days post-delivery -> escalate (out of self-serve policy)"
+  },
+  {
+    "order_id": 1004,
+    "customer_id": "C004",
+    "isbn": "978-0593318171",
+    "qty": 1,
+    "unit_price_usd": 18.00,
+    "status": "shipped",
+    "placed_days_ago": 3,
+    "delivered_days_ago": null,
+    "_note": "Margaret, Klara and the Sun, shipped not delivered"
+  },
+  {
+    "order_id": 1005,
+    "customer_id": "C005",
+    "isbn": "978-1449373320",
+    "qty": 50,
+    "unit_price_usd": 49.99,
+    "status": "shipped",
+    "placed_days_ago": 14,
+    "delivered_days_ago": null,
+    "_note": "ACME, 50x DDIA, bulk order in flight"
+  },
+  {
+    "order_id": 1006,
+    "customer_id": "C001",
+    "isbn": "978-0553293357",
+    "qty": 1,
+    "unit_price_usd": 16.00,
+    "status": "delivered",
+    "placed_days_ago": 38,
+    "delivered_days_ago": 35,
+    "_note": "Ada, Foundation, 35 days post-delivery -> store credit only"
+  },
+  {
+    "order_id": 1007,
+    "customer_id": "C002",
+    "isbn": "978-0441478125",
+    "qty": 1,
+    "unit_price_usd": 14.99,
+    "status": "delivered",
+    "placed_days_ago": 12,
+    "delivered_days_ago": 10,
+    "_note": "Grace, Left Hand of Darkness (low stock title), within refund window"
+  }
+]

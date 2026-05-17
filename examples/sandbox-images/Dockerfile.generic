@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1.7
+#
+# agent-belt generic sandbox base image.
+#
+# Provides the union of runtimes that the built-in agent CLIs need to spawn,
+# nothing more. Agent CLIs themselves are NOT installed here -- the framework
+# does not own the install matrix for third-party agents. Build a derived
+# image (see ``Dockerfile.cursor.example``) for each agent you want to
+# evaluate, or wire up a community/vendor image of your own.
+#
+# Build:
+#   docker build -t agent-belt-sandbox-generic:dev -f examples/sandbox-images/Dockerfile.generic .
+#
+# Use from a scenario group's _config.json:
+#   "sandbox": { "provider": "docker", "image": "agent-belt-sandbox-generic:dev" }
+#
+# Hardening notes (the runner adds these flags at run time -- the image just
+# needs to tolerate them):
+#   --cap-drop=ALL                  zero capabilities
+#   --security-opt=no-new-privileges
+#   --read-only                     rootfs is immutable; only the worktree
+#                                   bind-mount is writable
+#   --workdir=/work                 the host worktree is bind-mounted here
+#   -e NAME ...                     env passthrough by exact name only
+FROM python:3.12-slim-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    NODE_MAJOR=22
+
+# Single layer: install OS dependencies, set up Node 22 from NodeSource,
+# create the unprivileged user, and cache /work (mountpoint for the
+# worktree). Keep the layer tight so derived images stay small.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash --uid 1000 belt \
+    && mkdir -p /work \
+    && chown belt:belt /work
+
+USER belt
+WORKDIR /work
+
+# No ENTRYPOINT / CMD: the runner's ``DockerSandboxProvider`` invokes the
+# agent CLI as the container command (e.g. ``cursor-agent -p ... -- prompt``).
+# An ENTRYPOINT here would interfere with that argv.

@@ -1,0 +1,23 @@
+{
+  "name": "multi_turn_templating_workspace",
+  "description": "Demonstrates the workspace-bound templating fields `{{prev.git_diff}}` and `{{prev.tool_sequence}}`. Turn 0 edits the workspace (producing a non-empty git diff and at least one tool call); Turn 1 references both fields to prove the runner spliced the actual values into the prompt. Together with `correctness/multi_turn_templating.json` (which covers `{{prev.reply_text}}` and `{{turn_N.reply_text}}`), these two scenarios exercise every declared `_TEMPLATE_FIELDS` entry in `runner/orchestrator.py`. Tagged `dry-run-only` because the workspace-editing turn is brittle on offline CI but exercises end-to-end locally; `tests/test_templating_parity.py` enforces the parity statically so the contract holds in CI regardless.",
+  "tags": ["showcase", "editing-workspace", "multi-turn", "templating", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Create a new file at the repository root named templating_demo.md whose only contents is the line: hello-from-templating-demo. Do not modify any other file. Reply with just the filename you created.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["templating_demo.md"]
+      }
+    },
+    {
+      "message": "Here is the diff you just produced:\n\n{{prev.git_diff}}\n\nAnd here is the comma-separated list of tools you invoked: {{prev.tool_sequence}}\n\nReply with two short lines and nothing else:\nLine 1: the new filename that appears in the diff above\nLine 2: yes if the tools list is non-empty, no otherwise",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["templating_demo.md"]
+      }
+    }
+  ]
+}

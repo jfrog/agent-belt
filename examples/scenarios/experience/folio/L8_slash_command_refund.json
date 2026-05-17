@@ -1,0 +1,42 @@
+{
+  "name": "L8_slash_command_refund",
+  "description": "Proves Claude Code loaded the workspace-provisioned slash command at `.claude/commands/refund.md` and executed it (not treated as plain text). The command file mandates three things: (a) call `mcp__folio__refund_order` with order_id=1007, (b) reply in strict `REFUND|<id>|<status>|$<amount>|tag=folio-cmd-v1` format on a single line with NO preamble, (c) NO trailing skill marker. The literal `tag=folio-cmd-v1` exists nowhere else in the workspace, so seeing it in the reply combined with the matching MCP call is hard proof the slash command surface loaded.",
+  "tags": [
+    "L8",
+    "slash-command",
+    "mcp"
+  ],
+  "turns": [
+    {
+      "message": "/refund 1007 not as described",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "tools_invoked": [
+          "mcp__folio__refund_order"
+        ],
+        "tool_args_contain": {
+          "mcp__folio__refund_order": {
+            "order_id": "1007"
+          }
+        },
+        "tool_result_contains": {
+          "mcp__folio__refund_order": "refunded"
+        },
+        "reply_pattern": [
+          "REFUND\\|1007\\|refunded\\|\\$\\d+\\.\\d{2}\\|tag=folio-cmd-v1"
+        ],
+        "not_contains": [
+          "unknown command",
+          "not a recognized command",
+          "I don't know what /refund"
+        ]
+      }
+    }
+  ],
+  "llm_scorer_instruction": "Verify the agent (1) recognised /refund as a real slash command not plain text, (2) called mcp__folio__refund_order with order_id=1007, (3) replied in the strict REFUND|...|tag=folio-cmd-v1 format defined in .claude/commands/refund.md with no preamble or markdown fluff."
+}

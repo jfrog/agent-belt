@@ -1,0 +1,2 @@
+{"type":"text","part":{"text":"request timed out after 60s"}}
+{"type":"error","error":{"name":"TimeoutError","data":{"message":"deadline exceeded"}}}

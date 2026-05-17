@@ -1,0 +1,51 @@
+{
+  "name": "L2_refund_within_policy",
+  "description": "Tier-1 refund (within 30 days since delivery). Order #1001 was delivered 5 days ago to customer C001 (Ada Lovelace). The skill mandates `refund_order` for this case - NOT store credit, NOT escalation. Tests that the agent (a) verifies customer + order before acting, (b) picks the correct ladder tier, (c) calls `refund_order` with the right id, (d) returns the refund_id + amount verbatim.",
+  "tags": [
+    "L2",
+    "refund",
+    "tier-1",
+    "graded-policy"
+  ],
+  "turns": [
+    {
+      "message": "Hi, this is C001. My order #1001 (Dune) arrived a few days ago but I ended up not wanting it. Can I get a refund?",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": [
+          "bookstore-assistant"
+        ],
+        "tools_invoked": [
+          "mcp__folio__refund_order"
+        ],
+        "tool_args_contain": {
+          "mcp__folio__refund_order": {
+            "order_id": "1001"
+          }
+        },
+        "tool_result_contains": {
+          "mcp__folio__refund_order": "refunded"
+        },
+        "forbidden_tools": [
+          "mcp__folio__issue_store_credit",
+          "mcp__folio__escalate_to_human"
+        ],
+        "contains": [
+          "1001",
+          "[Folio support"
+        ],
+        "not_contains": [
+          "store credit",
+          "escalate",
+          "human review"
+        ]
+      }
+    }
+  ],
+  "llm_scorer_instruction": "Verify the agent (1) confirmed the order belongs to C001 by consulting the MCP, (2) recognised this as a Tier-1 refund (delivered within 30 days), (3) called refund_order (NOT issue_store_credit, NOT escalate_to_human), (4) communicated the refund_id and the dollar amount to the customer."
+}

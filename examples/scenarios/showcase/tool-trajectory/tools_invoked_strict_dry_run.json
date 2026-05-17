@@ -1,0 +1,13 @@
+{
+  "name": "tools_invoked_strict_dry_run",
+  "description": "Demonstrates the strict tools_invoked form - all listed tools must appear in the trajectory. Tagged dry-run-only because tool names differ across agents (Read vs read_file vs View); use tools_invoked_any in real scenarios.",
+  "tags": ["showcase", "tool-trajectory", "single-turn", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Read pyproject.toml and report the project name.",
+      "expect": {
+        "tools_invoked": ["Read"]
+      }
+    }
+  ]
+}

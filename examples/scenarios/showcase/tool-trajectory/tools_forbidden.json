@@ -1,0 +1,15 @@
+{
+  "name": "tools_forbidden",
+  "description": "Demonstrates forbidden_tools. Lists tools that must NOT appear anywhere in the trajectory. Inverse of only_used_tools - use this when most tools are fine but a specific dangerous one (e.g. Bash, Edit) must be avoided.",
+  "tags": ["showcase", "tool-trajectory", "single-turn", "negative", "real-runnable"],
+  "turns": [
+    {
+      "message": "Read pyproject.toml and report the project version. Do not modify any files. Do not run shell commands.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "forbidden_tools": ["Edit", "Write", "Bash", "Shell", "MultiEdit", "edit_file", "write_to_file"]
+      }
+    }
+  ]
+}

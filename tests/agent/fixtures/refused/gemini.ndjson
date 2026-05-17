@@ -1,0 +1,2 @@
+{"type":"message","role":"model","content":"I can't help with that request."}
+{"type":"result","status":"error","error":{"type":"refusal_error","message":"model refused"},"stats":{"duration_ms":12}}

@@ -1,0 +1,2 @@
+{"type":"message","content":"request timed out after 60s"}
+{"type":"result","is_error":true,"chat_id":"c","duration_ms":60000}

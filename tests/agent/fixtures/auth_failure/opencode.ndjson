@@ -1,0 +1,2 @@
+{"type":"text","part":{"text":"Not logged in \u00b7 Please run /login"}}
+{"type":"error","error":{"name":"AuthError","data":{"message":"Not logged in"}}}

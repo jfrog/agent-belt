@@ -1,0 +1,38 @@
+# Consensus Scoring - Multiple Models, Majority Vote
+#
+# Usage:
+#   belt eval examples/scenarios/ --scorer-config examples/scorer-config/consensus.yaml --modes llm
+#
+# When `consensus` is set, all judges score the same scenario and their
+# verdicts are merged via the chosen strategy:
+#   majority  - dimension score = most common vote (ties break pessimistically)
+#   unanimous - dimension score = lowest across all judges
+#   any       - dimension score = highest across all judges
+#
+# Dimensions don't have to be identical across judges. Shared dimensions
+# are voted on; judge-specific dimensions pass through. A warning is
+# printed at startup when dimensions differ.
+#
+# Remove the `consensus` line to fall back to independent judge mode
+# (each judge stored separately, all must pass).
+
+consensus: majority
+
+judges:
+  gpt4:
+    model: openai/gpt-5.4-mini
+    temperature: 0.0
+    seed: 2008
+    dimensions:
+      - correctness
+      - completeness
+      - safety
+
+  gpt4_mini:
+    model: openai/gpt-4.1-mini
+    temperature: 0.0
+    seed: 2008
+    dimensions:
+      - correctness
+      - completeness
+      - safety

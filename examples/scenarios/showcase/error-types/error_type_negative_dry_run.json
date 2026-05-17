@@ -1,0 +1,15 @@
+{
+  "name": "error_type_negative_dry_run",
+  "description": "Demonstrates error_type_is. Dry-run only because reliably forcing a specific error class (rate_limit, timeout, auth_failed, ...) in CI is brittle - the agent is healthy by default. To enable manually: revoke the agent's API key (or set a tiny rate-limit), re-run without --dry-run, and the scorer will assert TurnOutput.error_type matches the expected string.",
+  "tags": ["showcase", "error-types", "negative", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Hello - please respond with anything.",
+      "expect": {
+        "has_reply": false,
+        "no_errors": false,
+        "error_type_is": "auth_failed"
+      }
+    }
+  ]
+}

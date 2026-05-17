@@ -1,0 +1,46 @@
+{
+  "name": "L3_store_credit_tier",
+  "description": "Tier-2 store credit (31-60 days since delivery). Order #1002 was delivered 45 days ago to customer C002 (Grace Hopper) - past the full-refund window but still self-serve. The skill mandates `issue_store_credit` (NOT refund_order, NOT escalation). Tests that the agent correctly identifies the elapsed time and picks the middle tier rather than defaulting to a full refund out of generosity.",
+  "tags": [
+    "L3",
+    "refund",
+    "tier-2",
+    "graded-policy"
+  ],
+  "turns": [
+    {
+      "message": "Hello, this is Grace (C002). I'd like to return order #1002. We ended up not using those Designing Data-Intensive Applications copies for the project after all.",
+      "flags": [
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "skills_invoked": [
+          "bookstore-assistant"
+        ],
+        "tools_invoked": [
+          "mcp__folio__issue_store_credit"
+        ],
+        "tool_args_contain": {
+          "mcp__folio__issue_store_credit": {
+            "order_id": "1002"
+          }
+        },
+        "tool_result_contains": {
+          "mcp__folio__issue_store_credit": "store_credit_issued"
+        },
+        "forbidden_tools": [
+          "mcp__folio__refund_order",
+          "mcp__folio__escalate_to_human"
+        ],
+        "contains": [
+          "1002",
+          "[Folio support"
+        ]
+      }
+    }
+  ],
+  "llm_scorer_instruction": "Verify the agent (1) confirmed the order belongs to C002, (2) recognised the order is in the Tier-2 window (delivered 45 days ago, between 31 and 60), (3) called issue_store_credit with amount_usd = unit_price_usd * qty (NOT refund_order, NOT escalate_to_human), (4) explained to the customer that this is store credit and why a full refund is not available."
+}

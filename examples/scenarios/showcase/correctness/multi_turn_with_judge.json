@@ -1,0 +1,25 @@
+{
+  "name": "multi_turn_with_judge",
+  "description": "Demonstrates multi-turn (turns length > 1) and llm_scorer_instruction. Turn 1 establishes a fact; Turn 2 must build on it. The per-scenario LLM judge instruction tells the judge to penalise Turn 2 if it ignores Turn 1.",
+  "tags": ["showcase", "multi-turn", "llm-judge", "real-runnable"],
+  "llm_scorer_instruction": "Turn 2 MUST reference the value Turn 1 established. If Turn 2 invents a new number, asks the user to repeat it, or contradicts Turn 1, score response_quality as 'low'.",
+  "turns": [
+    {
+      "message": "I'm picking a lucky number for a demo. The number is 47. Acknowledge with a single short sentence that mentions the number 47.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["47"]
+      }
+    },
+    {
+      "message": "What was the lucky number I told you in my previous message? Reply with only that number on its own line, nothing else.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["47"],
+        "not_contains": ["I don't know", "I do not know", "no previous", "what number"]
+      }
+    }
+  ]
+}

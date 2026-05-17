@@ -1,0 +1,17 @@
+{
+  "name": "latency_streaming_dry_run",
+  "description": "Demonstrates max_ttfe_seconds, max_ttft_seconds, and max_ttlt_seconds - per-stream-event timing thresholds. Dry-run only because only agents that capture NDJSON stream timing populate these (claude-code does; cursor reports total only). To enable, run with --agent claude-code without --dry-run.",
+  "tags": ["showcase", "latency", "streaming", "dry-run-only"],
+  "turns": [
+    {
+      "message": "Reply with the single word 'pong' on its own line. Nothing else.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "max_ttfe_seconds": 60.0,
+        "max_ttft_seconds": 60.0,
+        "max_ttlt_seconds": 120.0
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "agent": "cursor",
+  "default_tags": ["showcase", "editing-workspace"],
+  "working_dir": "../../../fixtures/sample-project",
+  "workspace_isolation": "git-worktree",
+  "workspace_ref": "HEAD"
+}

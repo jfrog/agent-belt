@@ -1,0 +1,2 @@
+{"type":"message","role":"model","content":"Not logged in \u00b7 Please log in to continue"}
+{"type":"result","status":"error","error":{"type":"auth_error","message":"Not logged in"},"stats":{"duration_ms":12}}

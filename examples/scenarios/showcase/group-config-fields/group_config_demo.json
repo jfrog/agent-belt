@@ -1,0 +1,15 @@
+{
+  "name": "group_config_demo",
+  "description": "The interesting bits of this scenario live in the sibling _config.json: it sets `default_tags`, a custom `llm_dimensions` entry ('frugality'), and `llm_dimensions_extend_defaults: true`. Run with --modes llm to see the custom dimension scored alongside the four defaults (execution, trajectory, response_quality, efficiency).",
+  "tags": ["showcase", "group-config", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "What is the capital of France? Reply with just the city name on its own line.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["Paris"]
+      }
+    }
+  ]
+}

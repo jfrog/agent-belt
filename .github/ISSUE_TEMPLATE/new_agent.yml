@@ -1,0 +1,45 @@
+name: New Agent Request
+description: Request support for a new CLI agent
+labels: ["new feature", "agent"]
+body:
+  - type: input
+    id: agent_name
+    attributes:
+      label: Agent Name
+      description: Name of the CLI agent (e.g., "aider", "continue")
+    validations:
+      required: true
+
+  - type: input
+    id: cli_command
+    attributes:
+      label: CLI Command
+      description: How is the agent invoked? (e.g., "aider --message")
+    validations:
+      required: true
+
+  - type: dropdown
+    id: output_format
+    attributes:
+      label: Output Format
+      options:
+        - Plain text
+        - JSON
+        - NDJSON (streaming)
+        - Other
+
+  - type: checkboxes
+    id: capabilities
+    attributes:
+      label: Capabilities
+      options:
+        - label: Multi-turn sessions (resume/conversation ID)
+        - label: Structured tool call output
+        - label: Streaming events
+        - label: Non-interactive/headless mode
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Context
+      description: Links to docs, CLI reference, or output examples
