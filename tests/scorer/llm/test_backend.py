@@ -453,3 +453,310 @@ class TestOllamaBackend:
 
         with patch("httpx.get", side_effect=_httpx.TimeoutException("timeout")):
             assert OllamaBackend().is_available() is False
+
+
+class TestAnthropicAuthRetryHeaders:
+    """Anthropic backend offers Authorization: Bearer as a fallback for x-api-key."""
+
+    def test_returns_bearer_when_original_used_x_api_key(self):
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        backend = AnthropicBackend()
+        original = {
+            "x-api-key": "jwt-token-value",
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+        }
+        retry = backend.auth_retry_headers(original)
+        assert retry is not None
+        assert retry["Authorization"] == "Bearer jwt-token-value"
+        assert "x-api-key" not in retry
+        # Other headers are preserved verbatim.
+        assert retry["Content-Type"] == "application/json"
+        assert retry["anthropic-version"] == "2023-06-01"
+
+    def test_returns_none_when_already_bearer(self):
+        """Once we've switched to Bearer (cached), don't loop back to x-api-key."""
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        backend = AnthropicBackend()
+        original = {
+            "Authorization": "Bearer jwt-token-value",
+            "Content-Type": "application/json",
+        }
+        assert backend.auth_retry_headers(original) is None
+
+    def test_returns_none_when_no_auth_header(self):
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        backend = AnthropicBackend()
+        assert backend.auth_retry_headers({"Content-Type": "application/json"}) is None
+
+
+class TestAnthropicHeaderCache:
+    """Once Bearer succeeded, build_request emits Bearer directly on next call."""
+
+    def test_build_request_uses_bearer_after_record_auth_retry_success(self):
+        import os
+        from unittest.mock import patch
+
+        from belt.scorer.entities import JudgeConfig
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        backend = AnthropicBackend()
+        config = JudgeConfig(
+            model="anthropic/claude-sonnet-4-5",
+            temperature=0.0,
+            seed=2008,
+            max_tokens=4096,
+        )
+        # Default: x-api-key.
+        with patch.dict(os.environ, {"BELT_ANTHROPIC_API_KEY": "jwt-tok"}, clear=False):
+            _, headers, _ = backend.build_request(config, [{"role": "user", "content": "hi"}], {"type": "object"})
+            assert headers.get("x-api-key") == "jwt-tok"
+            assert "Authorization" not in headers
+
+            # Caller marks Bearer as the working style after a successful retry.
+            backend.record_auth_retry_success()
+
+            _, headers2, _ = backend.build_request(config, [{"role": "user", "content": "hi"}], {"type": "object"})
+            assert headers2.get("Authorization") == "Bearer jwt-tok"
+            assert "x-api-key" not in headers2
+
+
+class TestPreflightAuthRetry:
+    """Preflight 401/403 also retries with backend-supplied fallback headers."""
+
+    def test_preflight_403_retries_with_bearer(self):
+        import os
+        from unittest.mock import patch
+
+        import httpx
+
+        from belt.scorer.entities import JudgeConfig
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        captured_headers: list[dict[str, str]] = []
+
+        request = httpx.Request("GET", "https://gw.example/anthropic/v1/models/claude-sonnet-4-5")
+        resp_403 = httpx.Response(403, request=request, text="<H1>403</H1>")
+        resp_200 = httpx.Response(
+            200,
+            request=request,
+            json={"id": "claude-sonnet-4-5", "type": "model"},
+        )
+
+        def fake_get(url, headers, timeout):
+            captured_headers.append(dict(headers))
+            return resp_200 if len(captured_headers) >= 2 else resp_403
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "jwt-token", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        with patch.dict(os.environ, env, clear=False), patch("belt.scorer.llm.backend.httpx.get", side_effect=fake_get):
+            config = JudgeConfig(
+                model="anthropic/claude-sonnet-4-5",
+                temperature=0.0,
+                seed=2008,
+                max_tokens=4096,
+            )
+            # No exception means preflight succeeded.
+            backend.preflight_model(config, timeout=5)
+
+        assert len(captured_headers) == 2
+        assert captured_headers[0].get("x-api-key") == "jwt-token"
+        assert captured_headers[1].get("Authorization") == "Bearer jwt-token"
+        assert backend._use_bearer is True
+
+    def test_preflight_403_then_401_raises_scorer_error_with_both_bodies(self):
+        import os
+
+        import httpx
+
+        from belt.errors import ScorerError
+        from belt.scorer.entities import JudgeConfig
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        request = httpx.Request("GET", "https://gw.example/anthropic/v1/models/claude-sonnet-4-5")
+        resp_403 = httpx.Response(403, request=request, text="primary-body")
+        resp_401 = httpx.Response(401, request=request, text="retry-body")
+
+        call_count = [0]
+
+        def fake_get(url, headers, timeout):
+            call_count[0] += 1
+            return resp_403 if call_count[0] == 1 else resp_401
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "tok", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        patch_env = patch.dict(os.environ, env, clear=False)
+        patch_get = patch("belt.scorer.llm.backend.httpx.get", side_effect=fake_get)
+        with patch_env, patch_get:
+            config = JudgeConfig(model="anthropic/claude-sonnet-4-5", temperature=0.0, seed=0, max_tokens=4096)
+            with pytest.raises(ScorerError) as exc_info:
+                backend.preflight_model(config, timeout=5)
+
+        msg = str(exc_info.value)
+        assert "403+401" in msg
+        assert "primary-body" in msg
+        assert "retry-body" in msg
+
+    def test_preflight_403_then_5xx_returns_silently(self):
+        import os
+
+        import httpx
+
+        from belt.scorer.entities import JudgeConfig
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        request = httpx.Request("GET", "https://gw.example/anthropic/v1/models/claude-sonnet-4-5")
+        resp_403 = httpx.Response(403, request=request, text="auth-err")
+        resp_503 = httpx.Response(503, request=request, text="service-unavailable")
+
+        call_count = [0]
+
+        def fake_get(url, headers, timeout):
+            call_count[0] += 1
+            return resp_403 if call_count[0] == 1 else resp_503
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "tok", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        patch_env = patch.dict(os.environ, env, clear=False)
+        patch_get = patch("belt.scorer.llm.backend.httpx.get", side_effect=fake_get)
+        with patch_env, patch_get:
+            config = JudgeConfig(model="anthropic/claude-sonnet-4-5", temperature=0.0, seed=0, max_tokens=4096)
+            # 5xx on retry → transient, should return silently
+            backend.preflight_model(config, timeout=5)
+
+        assert call_count[0] == 2
+
+    def test_preflight_403_then_timeout_returns_silently(self):
+        import os
+
+        import httpx
+
+        from belt.scorer.entities import JudgeConfig
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        request = httpx.Request("GET", "https://gw.example/anthropic/v1/models/claude-sonnet-4-5")
+        resp_403 = httpx.Response(403, request=request, text="auth-err")
+
+        call_count = [0]
+
+        def fake_get(url, headers, timeout):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return resp_403
+            raise httpx.TimeoutException("timed out", request=request)
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "tok", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        patch_env = patch.dict(os.environ, env, clear=False)
+        patch_get = patch("belt.scorer.llm.backend.httpx.get", side_effect=fake_get)
+        with patch_env, patch_get:
+            config = JudgeConfig(model="anthropic/claude-sonnet-4-5", temperature=0.0, seed=0, max_tokens=4096)
+            # Timeout on retry → transient, should return silently
+            backend.preflight_model(config, timeout=5)
+
+        assert call_count[0] == 2
+
+    def test_preflight_403_no_retry_headers_raises_scorer_error_with_primary_body(self):
+        """auth_retry_headers returning None (non-Anthropic backend) raises immediately."""
+        import os
+
+        import httpx
+
+        from belt.errors import ScorerError
+        from belt.scorer.entities import JudgeConfig
+        from belt.scorer.llm.backend import OpenAIBackend
+
+        request = httpx.Request("GET", "https://api.openai.com/v1/models/gpt-4.1")
+        resp_403 = httpx.Response(403, request=request, text="openai-403-body")
+
+        def fake_get(url, headers, timeout):
+            return resp_403
+
+        env = {
+            "BELT_OPENAI_API_KEY": "sk-test",
+            "BELT_OPENAI_BASE_URL": "https://api.openai.com",
+        }
+        patch_env = patch.dict(os.environ, env, clear=False)
+        patch_get = patch("belt.scorer.llm.backend.httpx.get", side_effect=fake_get)
+        with patch_env, patch_get:
+            backend = OpenAIBackend()
+            config = JudgeConfig(model="openai/gpt-4.1", temperature=0.0, seed=0, max_tokens=4096)
+            with pytest.raises(ScorerError) as exc_info:
+                backend.preflight_model(config, timeout=5)
+
+        msg = str(exc_info.value)
+        assert "openai-403-body" in msg
+        # Only one attempt — no retry
+        assert "+" not in msg.split("HTTP")[1].split("\n")[0]
+
+    def test_preflight_404_does_not_retry_and_aborts_with_model_hint(self):
+        """A 404 (wrong model name) must NOT trigger an auth retry — it is a
+        config bug, not an auth failure. The abort reports a single HTTP 404
+        and never the misleading 'auth retry didn't help' message."""
+        import os
+
+        import httpx
+
+        from belt.errors import ScorerError
+        from belt.scorer.entities import JudgeConfig
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        request = httpx.Request("GET", "https://gw.example/anthropic/v1/models/does-not-exist")
+        resp_404 = httpx.Response(404, request=request, text="model not found")
+
+        call_count = [0]
+
+        def fake_get(url, headers, timeout):
+            call_count[0] += 1
+            return resp_404
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "tok", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        patch_env = patch.dict(os.environ, env, clear=False)
+        patch_get = patch("belt.scorer.llm.backend.httpx.get", side_effect=fake_get)
+        with patch_env, patch_get:
+            config = JudgeConfig(model="anthropic/does-not-exist", temperature=0.0, seed=0, max_tokens=4096)
+            with pytest.raises(ScorerError) as exc_info:
+                backend.preflight_model(config, timeout=5)
+
+        # Exactly one GET — the Bearer auth retry must not fire on a 404.
+        assert call_count[0] == 1
+        assert backend._use_bearer is False
+        msg = str(exc_info.value)
+        assert "HTTP 404" in msg
+        assert "auth retry didn't help" not in msg
+        assert "404+" not in msg
+
+    def test_preflight_403_then_429_returns_silently(self):
+        """A 429 on the auth retry is transient — proceed and let the runtime
+        judge-infra path handle real failures, mirroring the primary attempt."""
+        import os
+
+        import httpx
+
+        from belt.scorer.entities import JudgeConfig
+        from belt.scorer.llm.backend import AnthropicBackend
+
+        request = httpx.Request("GET", "https://gw.example/anthropic/v1/models/claude-sonnet-4-5")
+        resp_403 = httpx.Response(403, request=request, text="auth-err")
+        resp_429 = httpx.Response(429, request=request, text="rate-limited")
+
+        call_count = [0]
+
+        def fake_get(url, headers, timeout):
+            call_count[0] += 1
+            return resp_403 if call_count[0] == 1 else resp_429
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "tok", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        patch_env = patch.dict(os.environ, env, clear=False)
+        patch_get = patch("belt.scorer.llm.backend.httpx.get", side_effect=fake_get)
+        with patch_env, patch_get:
+            config = JudgeConfig(model="anthropic/claude-sonnet-4-5", temperature=0.0, seed=0, max_tokens=4096)
+            # 429 on retry → transient, should return silently
+            backend.preflight_model(config, timeout=5)
+
+        assert call_count[0] == 2

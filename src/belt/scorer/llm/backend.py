@@ -191,6 +191,61 @@ def _do_get_preflight(
             body,
         )
         return
+    # Auth failed. A genuine auth rejection (401/403) is worth retrying with
+    # the backend's fallback auth style; a 404 means the model name is wrong,
+    # so skip the retry and fall through to the clean single-body abort below.
+    retry_headers = backend.auth_retry_headers(headers) if code in (401, 403) else None
+    if retry_headers is not None:
+        logger.warning(
+            "{} preflight HTTP {} with primary auth header; retrying once " "with backend-supplied fallback headers.",
+            provider,
+            code,
+        )
+        try:
+            resp2 = httpx.get(url, headers=retry_headers, timeout=effective_timeout)
+        except (httpx.TimeoutException, httpx.HTTPError) as exc:
+            logger.warning(
+                "{} preflight retry transient failure for model {!r}: {}; "
+                "proceeding (runtime judge-infra path will handle real failures).",
+                provider,
+                model,
+                exc,
+            )
+            return
+        if resp2.status_code < 400:
+            backend.record_auth_retry_success()
+            return
+        retry_code = resp2.status_code
+        retry_body = resp2.text[:600]
+        # Classify the retry the same way as the primary attempt so transient
+        # hiccups (5xx, 429, network) proceed and only a real auth/config
+        # failure aborts — both attempts share one policy.
+        try:
+            resp2.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            retry_token = backend.classify_error(exc) or "other"
+        else:  # pragma: no cover - resp.raise_for_status always raises here
+            retry_token = "other"
+        if retry_token != "auth_failed":
+            logger.warning(
+                "{} preflight retry transient HTTP {} for model {!r}: {}; "
+                "proceeding (runtime judge-infra path will handle real failures).",
+                provider,
+                retry_code,
+                model,
+                retry_body,
+            )
+            return
+        # Auth retry also rejected — config bug; report both attempts.
+        primary_body = body
+        hint = format_judge_error_hint(retry_code, retry_body)
+        raise ScorerError(
+            f"{provider} judge preflight failed for model {model!r}: "
+            f"HTTP {code}+{retry_code} (auth retry didn't help)\n"
+            f"  Primary: {primary_body[:300]}\n"
+            f"  Retry:   {retry_body[:300]}\n"
+            f"  {hint}"
+        )
     hint = format_judge_error_hint(code, body)
     raise ScorerError(
         f"{provider} judge preflight failed for model {model!r}: HTTP {code}\n" f"  Upstream body: {body}\n" f"  {hint}"
@@ -283,6 +338,39 @@ class BaseJudgeBackend(ABC):
             return "timeout"
         if isinstance(exc, httpx.HTTPError):
             return "other"
+        return None
+
+    # Design note: auth fallback is exposed as an optional method with a safe
+    # default (return None) instead of letting the dispatcher sniff capabilities
+    # via isinstance/hasattr. Capability branching in the framework core is what
+    # Principle 5 (graceful degradation via optional defaults, not branching)
+    # forbids — so backends opt in by overriding, and LLMScorer stays
+    # unconditional. record_auth_retry_success() follows the same rationale.
+    def auth_retry_headers(self, original_headers: dict[str, str]) -> dict[str, str] | None:
+        """Return alternate auth headers to retry once with after a 401/403.
+
+        Called by the judge dispatcher (and the preflight helper) when the
+        provider returns 401/403 on the first attempt. A backend that knows
+        the gateway in front of it accepts more than one auth header style
+        (e.g. JFrog's gateway: WAF allows ``Authorization: Bearer <jwt>``
+        but rejects ``x-api-key: <jwt>`` from some egress IPs) returns the
+        replacement header dict here. The dispatcher reissues the POST
+        once with those headers and, on success, the backend should cache
+        which style worked so subsequent requests skip the failed style.
+
+        Returns ``None`` (the default) when no fallback is meaningful — the
+        caller propagates the 401/403 as it would today.
+        """
+        return None
+
+    def record_auth_retry_success(self) -> None:
+        """Called by the dispatcher after the auth-retry attempt succeeds.
+
+        Backends that cache the working auth style (to avoid re-paying the
+        failed-style round-trip on every subsequent request) override this to
+        record the success. The default no-op keeps callers unconditional —
+        no ``hasattr`` guard needed.
+        """
         return None
 
 
@@ -631,8 +719,34 @@ class AnthropicBackend(BaseJudgeBackend):
         BELT_ANTHROPIC_BASE_URL - optional, defaults to https://api.anthropic.com
     """
 
+    def __init__(self) -> None:
+        # Per-process cache: once we've seen Bearer succeed (typically
+        # because a WAF in front of the gateway rejected x-api-key), every
+        # subsequent build_request emits Bearer directly. Avoids paying a
+        # 401/403 round-trip on every single judge call in a CI run.
+        # Single-boolean assignment is atomic under the GIL, so no lock
+        # is needed when --workers N > 1; worst case: two threads both see
+        # False and each do one extra retry before converging on True.
+        self._use_bearer = False
+
+    def record_auth_retry_success(self) -> None:
+        """Record that the alternate auth style succeeded — emit it on subsequent calls."""
+        self._use_bearer = True
+
     def provider_name(self) -> str:
         return "Anthropic"
+
+    def auth_retry_headers(self, original_headers: dict[str, str]) -> dict[str, str] | None:
+        # Swap x-api-key → Authorization: Bearer. The JFrog gateway's WAF
+        # rejects x-api-key from runner-pool egress with a CloudFront 403
+        # but accepts Bearer; outside that environment Anthropic's own API
+        # also accepts Bearer (undocumented but stable since v1).
+        api_key = original_headers.get("x-api-key")
+        if not api_key:
+            return None
+        retry = {k: v for k, v in original_headers.items() if k != "x-api-key"}
+        retry["Authorization"] = f"Bearer {api_key}"
+        return retry
 
     def is_available(self) -> bool:
         return bool(os.environ.get(envvars.ANTHROPIC_API_KEY))
@@ -669,11 +783,14 @@ class AnthropicBackend(BaseJudgeBackend):
         api_key = os.environ[envvars.ANTHROPIC_API_KEY]
         base = self._resolve_base_url()
         url = f"{base}/v1/messages"
-        headers = {
-            "x-api-key": api_key,
+        headers: dict[str, str] = {
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
         }
+        if self._use_bearer:
+            headers["Authorization"] = f"Bearer {api_key}"
+        else:
+            headers["x-api-key"] = api_key
 
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
         system_text = "\n\n".join(system_parts)
