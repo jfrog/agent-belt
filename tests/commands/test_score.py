@@ -256,16 +256,17 @@ class TestBuildScorersExtendDefaults:
     def test_extend_defaults_merges_with_generic(self) -> None:
         from belt.agent.scoring import GENERIC_DIMENSIONS
         from belt.commands.score import _build_scorers
+        from belt.scorer.config_schema import JudgeDef
 
         with patch("belt.scorer.pipeline.load_scorer_config") as mock_load:
             mock_load.return_value = (
                 [
-                    {
-                        "name": "test_judge",
-                        "model": "openai/gpt-4.1",
-                        "extend_defaults": True,
-                        "dimensions": [{"name": "custom_dim", "description": "My custom dimension"}],
-                    }
+                    JudgeDef(
+                        name="test_judge",
+                        model="openai/gpt-4.1",
+                        extend_defaults=True,
+                        dimensions=[{"name": "custom_dim", "description": "My custom dimension"}],
+                    )
                 ],
                 None,
             )
@@ -278,15 +279,16 @@ class TestBuildScorersExtendDefaults:
 
     def test_no_extend_replaces_defaults(self) -> None:
         from belt.commands.score import _build_scorers
+        from belt.scorer.config_schema import JudgeDef
 
         with patch("belt.scorer.pipeline.load_scorer_config") as mock_load:
             mock_load.return_value = (
                 [
-                    {
-                        "name": "test_judge",
-                        "model": "openai/gpt-4.1",
-                        "dimensions": [{"name": "only_this"}],
-                    }
+                    JudgeDef(
+                        name="test_judge",
+                        model="openai/gpt-4.1",
+                        dimensions=[{"name": "only_this"}],
+                    )
                 ],
                 None,
             )

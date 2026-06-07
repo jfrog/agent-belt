@@ -49,7 +49,7 @@ from belt.exporter.base import BaseExporter
 from belt.exporter.entities import ExportContext
 from belt.exporter.helpers import collapse_trials, get_bool_option, get_int_option, truncate_with_marker
 from belt.scorer.entities import DEFAULT_FAIL_LEVELS
-from belt.scorer.payloads import LLMPayload, RulesPayload
+from belt.scorer.payloads import PerTurnLLMPayload, RulesPayload, iter_llm_payloads, iter_llm_verdicts
 
 _DEFAULT_MAX_BODY_BYTES = 16 * 1024
 _HEAD_CLI_BYTES = 4 * 1024
@@ -233,14 +233,33 @@ class JUnitExporter(BaseExporter):
                     if c.passed is False:
                         suffix = f" - {c.details}" if c.details else ""
                         rule_lines.append(f"  rules/{c.dimension}/{c.check}{suffix}")
-            llm = s.scores.get("llm")
-            if isinstance(llm, LLMPayload):
-                for dim in sorted(llm.dimensions):
-                    verdict = llm.dimensions[dim]
-                    if verdict.score not in DEFAULT_FAIL_LEVELS:
+            # Walk every LLM-shaped payload so multi-judge and per-turn
+            # failing verdicts both surface in the JUnit failure body.
+            # Per-judge prefix keeps the lines attributable when more
+            # than one judge ran.
+            for name, payload in iter_llm_payloads(s):
+                prefix = "llm" if name == "llm" else f"llm[{name}]"
+                for dim, score_token, reasoning in iter_llm_verdicts(payload):
+                    if score_token not in DEFAULT_FAIL_LEVELS:
                         continue
-                    snippet = verdict.reasoning if len(verdict.reasoning) <= 240 else verdict.reasoning[:240] + "..."
-                    llm_lines.append(f"  llm/{dim} ({verdict.score}): {snippet}")
+                    snippet = reasoning if len(reasoning) <= 240 else reasoning[:240] + "..."
+                    llm_lines.append(f"  {prefix}/{dim} ({score_token}): {snippet}")
+                # Nested per-turn detail so a reviewer reading the JUnit
+                # body in CI can see which specific turn caused the
+                # rolled-up dimension to fail, not just the worst-of-
+                # turns headline. Already-bounded by ``max_body_bytes``
+                # caller truncation.
+                if isinstance(payload, PerTurnLLMPayload):
+                    for tv in payload.turns:
+                        if tv.judge_errored:
+                            etype = tv.judge_error_type or "other"
+                            llm_lines.append(f"    [turn {tv.turn_idx}] judge errored ({etype})")
+                            continue
+                        for dim, vd in tv.dimensions.items():
+                            if vd.score not in DEFAULT_FAIL_LEVELS:
+                                continue
+                            snippet = vd.reasoning if len(vd.reasoning) <= 200 else vd.reasoning[:200] + "..."
+                            llm_lines.append(f"    [turn {tv.turn_idx}] {dim}={vd.score}: {snippet}")
 
         headline_parts: list[str] = []
         if rule_lines:

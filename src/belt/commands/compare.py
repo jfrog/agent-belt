@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from belt._ui import eprint
@@ -50,14 +51,61 @@ def _scenario_key(s: dict) -> str:
     return f"{s.get('group', '')}/{s.get('scenario_name', '')}"
 
 
-def _discover_dimensions(results: dict) -> tuple[set[str], set[str]]:
-    """Discover (rules_dims, llm_dims) from result scenarios.
+def _iter_llm_dim_scores_from_scenario(scenario: dict) -> Iterable[tuple[str, str, str | None]]:
+    """Yield (scorer_name, dimension, score_token) from a serialised scenario.
 
-    Walks ``results.json`` (the aggregator's serialised
-    ``ScenarioScore`` array) at the dict level - this command runs
-    standalone and reads stale artifacts, so it can't depend on the
-    typed payload classes being importable.
+    Operates at the dict level (no Pydantic) so :command:`belt compare`
+    can read older / cross-version ``results.json`` files without
+    payload-class drift breaking it.
+
+    Handles both LLM payload shapes:
+
+    - scenario-level: ``{"dimensions": {dim: {"score": ...}}}``
+    - per-turn:       ``{"turns": [{"dimensions": {dim: {"score": ...}}}]}``
+      For per-turn, applies worst-of-turns so each dim contributes one
+      row, matching ``iter_llm_verdicts``.
+    - any scorer name (multi-judge ``--scorer-config`` writes
+      ``judge_a``/``judge_b``) is walked - not just the literal
+      ``"llm"`` key.
     """
+    for scorer_name, payload in (scenario.get("scores") or {}).items():
+        if not isinstance(payload, dict):
+            continue
+        sv = payload.get("schema_version") or ""
+        if not sv.startswith(("llm.v", "per_turn_llm.v")):
+            # Cross-version: also accept payloads that have a
+            # ``dimensions`` or ``turns`` shape without an explicit
+            # version (older serialisations).
+            if "dimensions" not in payload and "turns" not in payload:
+                continue
+        if "turns" in payload and isinstance(payload.get("turns"), list):
+            # Worst-of-turns rollup per dim. Rank mirrors
+            # _WORST_OF_TURNS_RANK in scorer.payloads; keep it in-file to
+            # avoid importing the Pydantic stack just for a dict walk.
+            rank = {"inconclusive": -1, "fail": 0, "low": 0, "medium": 1, "high": 2, "pass": 2}
+            worst: dict[str, str] = {}
+            for tv in payload["turns"]:
+                if not isinstance(tv, dict):
+                    continue
+                for dim, vd in (tv.get("dimensions") or {}).items():
+                    if not isinstance(vd, dict):
+                        continue
+                    token = vd.get("score")
+                    if not token:
+                        continue
+                    prev = worst.get(dim)
+                    if prev is None or rank.get(token, 1) < rank.get(prev, 1):
+                        worst[dim] = token
+            for dim, token in worst.items():
+                yield scorer_name, dim, token
+        else:
+            for dim, vd in (payload.get("dimensions") or {}).items():
+                if isinstance(vd, dict) and "score" in vd:
+                    yield scorer_name, dim, vd.get("score")
+
+
+def _discover_dimensions(results: dict) -> tuple[set[str], set[str]]:
+    """Discover (rules_dims, llm_dims) from result scenarios."""
     rules_dims: set[str] = set()
     llm_dims: set[str] = set()
     for s in results.get("scenarios", []):
@@ -65,20 +113,21 @@ def _discover_dimensions(results: dict) -> tuple[set[str], set[str]]:
         rules = scores.get("rules") or {}
         for check in rules.get("checks", []) or []:
             rules_dims.add(check.get("dimension", "unknown"))
-        llm = scores.get("llm") or {}
-        for dim, val in (llm.get("dimensions") or {}).items():
-            if isinstance(val, dict) and "score" in val:
-                llm_dims.add(dim)
+        for _name, dim, _token in _iter_llm_dim_scores_from_scenario(s):
+            llm_dims.add(dim)
     return rules_dims, llm_dims
 
 
 def _get_llm_score(scenario: dict, dim: str) -> str | None:
-    llm = scenario.get("scores", {}).get("llm") or {}
-    dimensions = llm.get("dimensions") or {}
-    d = dimensions.get(dim)
-    if isinstance(d, dict):
-        return d.get("score")
-    return None
+    """Return the worst verdict for *dim* across every LLM-shaped payload."""
+    rank = {"inconclusive": -1, "fail": 0, "low": 0, "medium": 1, "high": 2, "pass": 2}
+    worst: str | None = None
+    for _name, d, token in _iter_llm_dim_scores_from_scenario(scenario):
+        if d != dim or token is None:
+            continue
+        if worst is None or rank.get(token, 1) < rank.get(worst, 1):
+            worst = token
+    return worst
 
 
 def _get_rules_pass(scenario: dict, dim: str) -> bool | None:

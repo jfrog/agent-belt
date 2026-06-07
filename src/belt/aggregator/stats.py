@@ -19,7 +19,7 @@ from belt.agent.error_types import ENVIRONMENTAL_ERROR_TYPES, UNKNOWN, remediati
 from belt.constants import MAX_TURNS_PER_SCENARIO, TRIAL_SUFFIX_RE, TURN_OUTPUT_TEMPLATE
 from belt.entities import ScenarioScore, TurnOutput
 from belt.scorer.entities import ALL_VERDICT_TOKENS
-from belt.scorer.payloads import LLMPayload, RulesPayload
+from belt.scorer.payloads import RulesPayload, iter_llm_payloads, iter_llm_verdicts
 
 from .thresholds import discover_llm_dimensions
 
@@ -53,8 +53,24 @@ __all__ = [
 
 
 def build_stats(scores: list[ScenarioScore]) -> dict:
-    """Per-mode breakdown: rules pass-rates per dimension, LLM score histograms."""
-    stats: dict = {"pass_rate": 0.0, "rules": {}, "llm": {}}
+    """Per-mode breakdown indexed by scorer key.
+
+    The single source of truth for per-dimension histograms is
+    ``stats["scorers"][<scorer_key>][<dim>]``. ``"rules"`` carries
+    the rule-based scorer's per-dimension pass-rates; every LLM
+    scorer (``"llm"`` for the consensus/single-judge path; the
+    user-declared judge names for multi-judge non-consensus; any
+    third-party scorer key) carries the verdict histogram with
+    buckets ``high`` / ``medium`` / ``low`` / ``pass`` / ``fail`` /
+    ``inconclusive`` / ``total``.
+
+    A scorer key indexes the typed payload contract defined in
+    :mod:`belt.scorer.payloads`. Aggregator/exporter consumers walk
+    payloads through :func:`iter_llm_payloads` /
+    :func:`iter_dimension_feedback`, never by hard-coded scorer
+    name lookup.
+    """
+    stats: dict = {"pass_rate": 0.0, "scorers": {}}
     total = len(scores)
     if total == 0:
         return stats
@@ -81,38 +97,40 @@ def build_stats(scores: list[ScenarioScore]) -> dict:
                 rule_dims[dim]["failed"] += 1
     for _dim, counts in rule_dims.items():
         counts["pass_rate"] = round(counts["passed"] / counts["total"], 2) if counts["total"] else 0.0
-    stats["rules"] = rule_dims
+    if rule_dims:
+        stats["scorers"]["rules"] = rule_dims
 
     if checks_total > 0:
         stats["partial_score"] = round(checks_passed / checks_total, 4)
         stats["checks_passed"] = checks_passed
         stats["checks_total"] = checks_total
 
-    llm_dims: dict[str, dict[str, int]] = {}
-    discovered = discover_llm_dimensions(scores)
-    inconclusive_warnings: list[str] = []
+    # One histogram per (scorer_key, dim) cell. ``iter_llm_verdicts``
+    # applies the per-turn worst-of-turns rollup so each dim
+    # contributes one row regardless of resolution.
+    per_scorer_dims: dict[str, dict[str, dict[str, int]]] = {}
     for s in scores:
-        llm = s.scores.get("llm")
-        if not isinstance(llm, LLMPayload):
-            continue
-        for dim in discovered:
-            verdict = llm.dimensions.get(dim)
-            bucket = llm_dims.setdefault(dim, {b: 0 for b in _VERDICT_BUCKETS} | {"total": 0})
-            bucket["total"] += 1
-            if verdict is not None and verdict.score in _VERDICT_BUCKETS:
-                bucket[verdict.score] += 1
-    for dim, counts in llm_dims.items():
-        total = counts.get("total", 0)
-        if total <= 0:
-            continue
-        inconclusive = counts.get("inconclusive", 0)
-        ratio = 100.0 * inconclusive / total
-        if ratio > INCONCLUSIVE_CEILING_PCT:
-            inconclusive_warnings.append(
-                f"llm/{dim}: {inconclusive}/{total} verdicts ({ratio:.0f}%) inconclusive - "
-                f"rubric may be unevidenced or transcript may be too short."
-            )
-    stats["llm"] = llm_dims
+        for scorer_name, payload in iter_llm_payloads(s):
+            scorer_block = per_scorer_dims.setdefault(scorer_name, {})
+            for dim, score_token, _reasoning in iter_llm_verdicts(payload):
+                bucket = scorer_block.setdefault(dim, {b: 0 for b in _VERDICT_BUCKETS} | {"total": 0})
+                bucket["total"] += 1
+                if score_token in _VERDICT_BUCKETS:
+                    bucket[score_token] += 1
+    inconclusive_warnings: list[str] = []
+    for scorer_name, dim_map in per_scorer_dims.items():
+        stats["scorers"][scorer_name] = dim_map
+        for dim, counts in dim_map.items():
+            dim_total = counts.get("total", 0)
+            if dim_total <= 0:
+                continue
+            inconclusive = counts.get("inconclusive", 0)
+            ratio = 100.0 * inconclusive / dim_total
+            if ratio > INCONCLUSIVE_CEILING_PCT:
+                inconclusive_warnings.append(
+                    f"{scorer_name}/{dim}: {inconclusive}/{dim_total} verdicts ({ratio:.0f}%) "
+                    f"inconclusive - rubric may be unevidenced or transcript may be too short."
+                )
     if inconclusive_warnings:
         stats["llm_inconclusive_warnings"] = inconclusive_warnings
     return stats
@@ -163,17 +181,28 @@ def collect_judge_errors(scores: list[ScenarioScore]) -> dict | None:
     per_scenario: list[dict] = []
     by_error_type: dict[str, int] = {}
     for s in scores:
-        llm = s.scores.get("llm")
-        if not isinstance(llm, LLMPayload) or not llm.judge_errored:
-            continue
-        etype = llm.judge_error_type or "other"
-        by_error_type[etype] = by_error_type.get(etype, 0) + 1
-        per_scenario.append(
-            {
-                "scenario": f"{s.group}/{s.scenario_name}",
-                "error_type": etype,
-            }
-        )
+        # Walk every LLM-shaped payload so a per-judge multi-judge
+        # config (judge_a + judge_b under --scorer-config without
+        # consensus) still surfaces infra failures, and a per-turn
+        # judge writing PerTurnLLMPayload is not silently dropped from
+        # this section. A scenario contributes one row even when
+        # multiple judges errored; the error_type is the alphabetically
+        # first one for stable ordering across runs.
+        first_etype: str | None = None
+        for _name, payload in iter_llm_payloads(s):
+            if not getattr(payload, "judge_errored", False):
+                continue
+            etype = getattr(payload, "judge_error_type", None) or "other"
+            if first_etype is None or etype < first_etype:
+                first_etype = etype
+        if first_etype is not None:
+            by_error_type[first_etype] = by_error_type.get(first_etype, 0) + 1
+            per_scenario.append(
+                {
+                    "scenario": f"{s.group}/{s.scenario_name}",
+                    "error_type": first_etype,
+                }
+            )
     if not per_scenario:
         return None
     return {
@@ -471,20 +500,23 @@ def build_bottom_line(
         top_rule = max(rule_failure_counts, key=rule_failure_counts.get)
         lines.append(f"Most common rule failure: {top_rule} ({rule_failure_counts[top_rule]}x)")
 
+    # Walk every LLM-shaped payload so per-judge multi-judge and
+    # per-turn (PerTurnLLMPayload, rolled up via iter_llm_verdicts) low
+    # / fail / inconclusive verdicts all contribute. ``reasoning`` for
+    # per-turn entries already carries the ``[turn N]`` prefix from the
+    # rollup so the operator sees which turn dragged the dim down.
     llm_low_dims: dict[str, list[str]] = {}
     llm_fail_dims: dict[str, list[str]] = {}
     llm_inconclusive_dims: dict[str, list[str]] = {}
     for s in failed:
-        llm = s.scores.get("llm")
-        if not isinstance(llm, LLMPayload):
-            continue
-        for dim, verdict in llm.dimensions.items():
-            if verdict.score == "low":
-                llm_low_dims.setdefault(dim, []).append(verdict.reasoning)
-            elif verdict.score == "fail":
-                llm_fail_dims.setdefault(dim, []).append(verdict.reasoning)
-            elif verdict.score == "inconclusive":
-                llm_inconclusive_dims.setdefault(dim, []).append(verdict.reasoning)
+        for _name, payload in iter_llm_payloads(s):
+            for dim, score_token, reasoning in iter_llm_verdicts(payload):
+                if score_token == "low":
+                    llm_low_dims.setdefault(dim, []).append(reasoning)
+                elif score_token == "fail":
+                    llm_fail_dims.setdefault(dim, []).append(reasoning)
+                elif score_token == "inconclusive":
+                    llm_inconclusive_dims.setdefault(dim, []).append(reasoning)
 
     for dim, reasons in llm_low_dims.items():
         lines.append(f"LLM scored {dim} as low in {len(reasons)} scenario(s): {reasons[0][:120]}")

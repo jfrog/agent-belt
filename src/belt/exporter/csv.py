@@ -38,7 +38,7 @@ from belt.entities import ScenarioScore
 from belt.exporter.base import BaseExporter
 from belt.exporter.entities import ExportContext
 from belt.exporter.helpers import collapse_trials
-from belt.scorer.payloads import iter_dimension_feedback
+from belt.scorer.payloads import PerTurnLLMPayload, iter_dimension_feedback, iter_llm_payloads
 
 _BASE_FIELDS: tuple[str, ...] = (
     "group",
@@ -54,6 +54,28 @@ _BASE_FIELDS: tuple[str, ...] = (
     "failed_rule_checks",
     "llm_low_dimensions",
 )
+
+_PER_TURN_FIELDS: tuple[str, ...] = (
+    "group",
+    "scenario",
+    "scorer_key",
+    "turn_idx",
+    "dimension",
+    "score",
+    "reasoning",
+    "judge_errored",
+)
+"""Sidecar CSV columns for per-turn LLM judging.
+
+Written to ``<output>.per_turn<ext>`` (e.g. ``results.per_turn.csv``)
+alongside the main per-scenario CSV when at least one
+:class:`PerTurnLLMPayload` is present in ``ctx.scores``. Sidecar
+inherits the same trust boundary as the user-supplied ``output``
+path; no new path-traversal surface.
+
+Every cell flows through :func:`belt._safe.csv_safe` for OWASP
+formula-injection hardening.
+"""
 
 
 def _row_total_cost(agent: Any, judge: Any) -> float | None:
@@ -105,6 +127,49 @@ class CsvExporter(BaseExporter):
                     group, scenario = key.split("/", 1)
                     writer.writerow(self._row(ctx, group, scenario, group_scores))
 
+        # Sidecar: only when at least one scenario has a PerTurnLLMPayload.
+        # ``output.with_suffix(".per_turn" + output.suffix)`` keeps the
+        # extension intact so ``results.csv`` → ``results.per_turn.csv``
+        # and ``results.tsv`` → ``results.per_turn.tsv``.
+        if any(isinstance(payload, PerTurnLLMPayload) for s in ctx.scores for _name, payload in iter_llm_payloads(s)):
+            sidecar = output.with_suffix(".per_turn" + output.suffix)
+            with sidecar.open("w", newline="", encoding="utf-8") as f:
+                writer = _stdlib_csv.writer(f, delimiter=delimiter, quoting=_stdlib_csv.QUOTE_MINIMAL)
+                writer.writerow(_PER_TURN_FIELDS)
+                for s in ctx.scores:
+                    for scorer_name, payload in iter_llm_payloads(s):
+                        if not isinstance(payload, PerTurnLLMPayload):
+                            continue
+                        for tv in payload.turns:
+                            judge_errored = "true" if tv.judge_errored else "false"
+                            if not tv.dimensions and tv.judge_errored:
+                                writer.writerow(
+                                    [
+                                        csv_safe(s.group),
+                                        csv_safe(s.scenario_name),
+                                        csv_safe(scorer_name),
+                                        str(tv.turn_idx),
+                                        "",
+                                        csv_safe(tv.judge_error_type or "other"),
+                                        "",
+                                        judge_errored,
+                                    ]
+                                )
+                                continue
+                            for dim, vd in tv.dimensions.items():
+                                writer.writerow(
+                                    [
+                                        csv_safe(s.group),
+                                        csv_safe(s.scenario_name),
+                                        csv_safe(scorer_name),
+                                        str(tv.turn_idx),
+                                        csv_safe(dim),
+                                        csv_safe(vd.score),
+                                        csv_safe(vd.reasoning),
+                                        judge_errored,
+                                    ]
+                                )
+
     def _row(
         self,
         ctx: ExportContext,
@@ -131,9 +196,17 @@ class CsvExporter(BaseExporter):
                 for c in rules.checks:
                     if c.passed is False:
                         rule_failures.append(f"{c.dimension}/{c.check}")
+            # Walk every LLM-shaped payload (multi-judge non-consensus
+            # and per-turn included). For per-turn the registered
+            # iterator emits worst-of-turns rows with ``raw["worst_score"]``;
+            # for scenario-level it emits ``raw["score"]``. Both shapes
+            # surface ``"low"`` here so the headline column captures
+            # every judge's downgrades.
             for fb in iter_dimension_feedback(s):
-                if fb.scorer_name == "llm" and fb.raw.get("score") == "low":
-                    llm_lows.append(fb.dimension)
+                token = fb.raw.get("score") or fb.raw.get("worst_score")
+                if token == "low":
+                    label = fb.dimension if fb.scorer_name == "llm" else f"{fb.scorer_name}/{fb.dimension}"
+                    llm_lows.append(label)
         agent_cost = cost_timing.get("agent_cost_usd")
         judge_cost = cost_timing.get("judge_cost_usd")
         total_cost = _row_total_cost(agent_cost, judge_cost)

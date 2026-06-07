@@ -17,7 +17,7 @@ Targets the cross-cutting guarantees of ``belt.scorer.payloads``:
 
 These guarantees are what makes ``ScenarioScore.scores`` a typed
 contract instead of an ad-hoc dict; if any of them regress, downstream
-exporters and the LangSmith plugin start producing fabricated rows.
+exporters start producing fabricated rows.
 """
 
 from __future__ import annotations

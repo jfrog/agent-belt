@@ -118,7 +118,7 @@ Minimum:
 > per-group extras go in `_config.json`: `GroupConfig` uses Pydantic's
 > default `extra="ignore"`, so the keys are silently dropped at
 > validation - plugins must re-read the JSON in their own setup hook
-> to recover them. See [§9 Plugin extras](#9-tags-mcp-plugin-extras).
+> to recover them. See [§10 Plugin extras](#10-tags-mcp-plugin-extras).
 
 ### 3.1. Turn
 
@@ -364,7 +364,59 @@ relative to the scenario JSON's directory and are wrapped as
 `<evidence_file path="...">...</evidence_file>` in the judge prompt.
 See [SCENARIOS.md → §8 LLM scoring opt-ins](SCENARIOS.md#8-llm-scoring-opt-ins).
 
-## 9. Tags, MCP, plugin extras
+## 9. Per-turn LLM judging
+
+When the scenario-level instruction is not granular enough ("in turn 0
+the agent must reach tool X with arg Y, in turn 1 it must recover from
+the error in turn 0, in turn 2 it must summarise without hallucinating"),
+declare a per-turn judge in `--scorer-config` with `resolution: turn`
+and attach per-turn overrides via `Turn.llm_judges`:
+
+```json
+{
+  "name": "per_turn_judging_demo",
+  "description": "...",
+  "turns": [
+    {
+      "message": "Read the README and list its sections.",
+      "expect": { "has_reply": true },
+      "llm_judges": {
+        "per_turn_judge": {
+          "instruction": "Verify the agent invoked a read tool BEFORE replying."
+        }
+      }
+    },
+    {
+      "message": "Now summarise the architecture section.",
+      "expect": { "has_reply": true },
+      "llm_judges": {
+        "per_turn_judge": {
+          "instruction": "Verify the summary only references content from the README.",
+          "dimensions": [{"name": "no_hallucination", "kind": "ternary"}]
+        }
+      }
+    }
+  ]
+}
+```
+
+### 9.1. `Turn.llm_judges` field reference
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `instruction` | `str` | `null` | Per-turn rubric override. Replaces (does not extend) the scenario-level `llm_scorer_instruction` for this turn only. Capped at 10 000 chars. Closing `</scenario_instruction>` tags are neutralised before reaching the judge. |
+| `dimensions` | `list` | `null` | Per-turn dimension override. Accepts both string shorthand (`"correctness"`) and `DimensionDef` dicts. Capped at 50 entries. |
+| `extend_default_dimensions` | `bool` | `false` | When `true`, declared `dimensions` extend the judge's default rubric rather than replacing it. |
+| `evidence_files` | `list[str]` | `null` | Per-turn evidence override. Paths resolve relative to the scenario JSON's directory; `..` and absolute paths reject with the same traversal guard as the scenario-level path. Closing `</evidence_file>` tags are neutralised. Capped at 20 entries. |
+| `skip` | `bool` | `false` | Skip this judge for this turn (no API call). Other turns still score normally. A scenario where every turn skips the only judge rejects at preflight (no vacuous-pass). |
+
+The dict is capped at 10 entries (`turns × llm_judges × dimensions` bounds
+the per-scenario judge call count to `100 × 10 × --trials` worst case).
+
+For judging mechanics, evidence scope, cost amplification, and the
+threat model see [SCORING.md → §2.10](SCORING.md#210-per-turn-llm-judging).
+
+## 10. Tags, MCP, plugin extras
 
 **Tags.** Combine group `default_tags` with per-scenario `tags`; the
 runner matches with AND logic.
@@ -403,7 +455,7 @@ scorers ignore the allowed extras, so a scenario authored for a plugin
 still loads against agents that lack it. See
 [PLUGGABILITY.md → Schema boundary](PLUGGABILITY.md#3-schema-boundary).
 
-## 10. Strict config validation (`--strict-config`)
+## 11. Strict config validation (`--strict-config`)
 
 Permissive parsing on `TurnExpectation` and `GroupConfig` is a typo
 trap. `"tools_invoke": [...]` (missing `d`) lands in `model_extra`

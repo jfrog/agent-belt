@@ -336,15 +336,19 @@ def test_copyright_header_accepts_header_first_line(cd_module):
     assert errors == []
 
 
-def test_copyright_header_skips_per_plugin_virtualenvs(cd_module):
+def test_copyright_header_skips_virtualenv_and_cache_dirs(cd_module):
     """Pins ``_HEADER_SKIP_DIR_NAMES``: any path segment in that set
-    disqualifies the file. Plugin-owned source is still checked."""
+    disqualifies the file. Source files outside those segments stay
+    subject to the header check."""
     _stage_header_tree(
         cd_module,
         {
-            "plugins/example/src/widget.py": "# (c) JFrog Ltd. (2026)\nx = 1\n",
-            "plugins/example/.venv/bin/activate_this.py": "x = 1\n",
-            "plugins/example/.venv/lib/python3.13/site-packages/_virtualenv.py": "x = 1\n",
+            # Proves the scan runs (would error if the header were missing).
+            "src/belt/widget.py": "# (c) JFrog Ltd. (2026)\nx = 1\n",
+            # ``.venv`` segment skipped — realistic when a contributor
+            # creates a venv inside a ``_HEADER_ROOTS`` entry.
+            "src/belt/.venv/bin/activate_this.py": "x = 1\n",
+            "src/belt/.venv/lib/python3.13/site-packages/_virtualenv.py": "x = 1\n",
             "src/belt/__pycache__/widget.cpython-313.pyc.py": "x = 1\n",
             "tests/.pytest_cache/CACHEDIR.tag.py": "x = 1\n",
         },

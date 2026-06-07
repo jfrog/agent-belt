@@ -89,7 +89,7 @@ def test_histogram_buckets_every_verdict_token(token: str) -> None:
     leaves all other buckets at zero."""
     scores = [_llm_score(f"s_{token}", {"dim": token})]
     stats = build_stats(scores)
-    hist = stats["llm"]["dim"]
+    hist = stats["scorers"]["llm"]["dim"]
     assert hist[token] == 1
     assert hist["total"] == 1
     for other in _ALL_TOKENS:
@@ -102,7 +102,7 @@ def test_histogram_initialised_with_all_buckets_at_zero() -> None:
     histogram still exposes every bucket so JSON consumers see a
     stable shape."""
     scores = [_llm_score("s1", {"dim": "high"}), _llm_score("s2", {"dim": "pass"})]
-    hist = build_stats(scores)["llm"]["dim"]
+    hist = build_stats(scores)["scorers"]["llm"]["dim"]
     for token in _ALL_TOKENS:
         assert token in hist, f"bucket {token!r} missing from histogram"
 

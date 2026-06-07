@@ -28,6 +28,11 @@ def _mock_judge(name: str, passed: bool, dims: dict[str, str]) -> MagicMock:
     judge = MagicMock()
     judge.judge_name = name
     judge.is_available.return_value = True
+    # Resolution defaults to "scenario" so the mock matches the
+    # behaviour the consensus block enforces (uniform across judges).
+    # Tests exercising per-turn consensus override this explicitly.
+    judge.resolution = "scenario"
+    judge.evidence_scope = "isolated"
 
     dim_names = list(dims.keys())
     judge.strategy = MagicMock()

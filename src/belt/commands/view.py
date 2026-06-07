@@ -40,7 +40,7 @@ from belt.constants import (
 )
 from belt.entities import ScenarioScore, TurnOutput
 from belt.scorer.display import UNKNOWN_VERDICT_DISPLAY, VERDICT_DISPLAY
-from belt.scorer.payloads import LLMPayload, RulesPayload
+from belt.scorer.payloads import RulesPayload, iter_llm_payloads, iter_llm_verdicts
 
 # ── LLM score display ──
 
@@ -212,12 +212,15 @@ def load_summary(outcomes_dir: Path) -> list[dict[str, Any]]:
         else:
             rules_str = "-"
 
-        llm = score.scores.get("llm")
+        # Walk every LLM-shaped payload so per-judge and per-turn
+        # verdicts both populate the summary table. Same-dim from
+        # multiple judges: keep the last write (insertion order matches
+        # config order).
         llm_dims: dict[str, str] = {}
-        if isinstance(llm, LLMPayload):
-            for dim, verdict in llm.dimensions.items():
-                if verdict.score:
-                    llm_dims[dim] = verdict.score
+        for _name, payload in iter_llm_payloads(score):
+            for dim, score_token, _r in iter_llm_verdicts(payload):
+                if score_token:
+                    llm_dims[dim] = score_token
 
         # Tags: attempt to read from a sibling scenario JSON file
         tags: list[str] = _load_tags(outcome_dir, score.scenario_name)
@@ -414,16 +417,18 @@ def _show_score_summary(con: Console, score: ScenarioScore) -> None:
             turn_label = f" (turn {c.turn_idx})" if c.turn_idx is not None else ""
             lines.append(f"  {icon} \\[{dim}] {chk}{detail}{turn_label}")
 
-    llm = score.scores.get("llm")
-    if isinstance(llm, LLMPayload):
+    # Walk every LLM-shaped payload so the LLM section surfaces all
+    # judges (multi-judge: judge_a + judge_b) and all per-turn rollups.
+    # Per-judge header keeps the rubrics attributable.
+    for name, payload in iter_llm_payloads(score):
+        header = "LLM scoring" if name == "llm" else f"LLM scoring [{rich_safe(name)}]"
         lines.append("")
-        lines.append("[bold]LLM scoring:[/bold]")
-        for dim in sorted(llm.dimensions):
-            verdict = llm.dimensions[dim]
-            icon, style = _SCORE_STYLE.get(verdict.score, UNKNOWN_VERDICT_DISPLAY)
-            lines.append(f"  {icon} [bold]{rich_safe(dim)}[/bold] - " f"[{style}]{rich_safe(verdict.score)}[/{style}]")
-            if verdict.reasoning:
-                truncated = verdict.reasoning[:300] + ("…" if len(verdict.reasoning) > 300 else "")
+        lines.append(f"[bold]{header}:[/bold]")
+        for dim, score_token, reasoning in iter_llm_verdicts(payload):
+            icon, style = _SCORE_STYLE.get(score_token, UNKNOWN_VERDICT_DISPLAY)
+            lines.append(f"  {icon} [bold]{rich_safe(dim)}[/bold] - " f"[{style}]{rich_safe(score_token)}[/{style}]")
+            if reasoning:
+                truncated = reasoning[:300] + ("…" if len(reasoning) > 300 else "")
                 lines.append(f"       [dim]{rich_safe(truncated)}[/dim]")
 
     content = "\n".join(lines)

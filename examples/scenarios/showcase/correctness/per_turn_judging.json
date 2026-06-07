@@ -1,0 +1,53 @@
+{
+  "name": "per_turn_judging",
+  "description": "Demonstrates per-turn LLM judging: each Turn carries its own ``llm_judges[\"turn_judge\"]`` block with a per-turn instruction (and optional dimension overrides). The judge produces one TurnVerdict per turn; the overall scenario passes only when every turn passes. Pair with examples/scorer-config/per-turn-judging.yaml.",
+  "tags": ["showcase", "multi-turn", "per-turn-judging", "real-runnable"],
+  "turns": [
+    {
+      "message": "I'm picking a lucky number for a demo. The number is 47. Acknowledge it with one short sentence that contains the digits 47.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["47"]
+      },
+      "llm_judges": {
+        "turn_judge": {
+          "instruction": "The agent's reply for THIS turn must (a) be a single short acknowledgement sentence and (b) contain the digits '47'. Score 'high' only if both are satisfied; 'medium' if one is borderline; 'low' or 'fail' if neither."
+        }
+      }
+    },
+    {
+      "message": "Repeat what you just said, prefixed exactly with 'Echoing: '. For reference, your previous reply was: {{prev.reply_text}}",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["Echoing", "47"]
+      },
+      "llm_judges": {
+        "turn_judge": {
+          "instruction": "The reply for THIS turn must begin with the literal prefix 'Echoing: ' and then quote the prior reply with '47' preserved. Score 'high' on exact prefix + faithful echo; 'medium' if the prefix or echo is slightly paraphrased; 'low' or 'fail' if the prefix is missing or '47' is dropped.",
+          "dimensions": [
+            {
+              "name": "echo_fidelity",
+              "description": "Did this turn faithfully echo the prior reply with the required prefix?",
+              "kind": "ternary"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "message": "Looking back at turn 0, your reply there was: {{turn_0.reply_text}}. Reply with ONLY the number from that message on its own line.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true,
+        "contains": ["47"]
+      },
+      "llm_judges": {
+        "turn_judge": {
+          "instruction": "The reply for THIS turn must be ONLY the number 47 on its own line, with no surrounding prose. Score 'high' on exact '47' only; 'medium' if 47 is present with minor extra whitespace; 'low' or 'fail' if any prose is added or the number is missing."
+        }
+      }
+    }
+  ]
+}

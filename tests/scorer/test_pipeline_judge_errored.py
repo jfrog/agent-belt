@@ -30,7 +30,14 @@ from belt.entities import TurnOutput
 from belt.scenario import GroupConfig, Scenario, Turn, TurnExpectation
 from belt.scorer.base import BaseScorer
 from belt.scorer.entities import ScorerResult
-from belt.scorer.payloads import CheckEntry, LLMDimensionVerdict, LLMPayload, RulesPayload
+from belt.scorer.payloads import (
+    CheckEntry,
+    LLMDimensionVerdict,
+    LLMPayload,
+    PerTurnLLMPayload,
+    RulesPayload,
+    TurnVerdict,
+)
 from belt.scorer.pipeline import score_scenario
 
 
@@ -190,6 +197,89 @@ class TestPipelineForceFailOnJudgeErrored:
     def test_happy_path_unchanged_no_synthetic_check(self, setup_scenario: tuple[Path, Path]) -> None:
         _, outcomes_root = setup_scenario
         scorers = [_PassingRulesScorer(), _RealLLMScorer()]
+        score = score_scenario(outcomes_root / "g" / "t", outcomes_root, scorers)
+        assert score.overall_pass is True
+        rules = score.scores.get("rules")
+        assert isinstance(rules, RulesPayload)
+        assert all(c.check != "llm_scorer_ran" for c in rules.checks)
+
+
+class _PartialPerTurnJudgeErroredScorer(BaseScorer):
+    """Per-turn scorer stub: turn 0 voted, turn 1 errored (infra).
+
+    Mirrors what the fixed :meth:`LLMScorer._score_per_turn` produces on
+    a partial per-turn failure - the payload-level ``judge_errored`` is
+    the OR over turns. The pipeline must treat the ``per_turn_llm.v1``
+    payload exactly like the scenario-level ``llm.v1`` one: force-fail +
+    synthetic execution check.
+    """
+
+    name = "llm"
+
+    def is_available(self) -> bool:
+        return True
+
+    def score(self, scenario: Scenario, turn_outputs):
+        return ScorerResult(
+            passed=False,
+            data=PerTurnLLMPayload(
+                overall_pass=False,
+                turns=[
+                    TurnVerdict(turn_idx=0, dimensions={"q": LLMDimensionVerdict(score="high", reasoning="ok")}),  # type: ignore[arg-type]
+                    TurnVerdict(turn_idx=1, dimensions={}, judge_errored=True, judge_error_type="rate_limited"),
+                ],
+                judge_errored=True,
+                judge_error_type="rate_limited",
+            ),
+        )
+
+
+class _CleanPerTurnScorer(BaseScorer):
+    """Per-turn scorer stub with every turn voted - pass-through guard."""
+
+    name = "llm"
+
+    def is_available(self) -> bool:
+        return True
+
+    def score(self, scenario: Scenario, turn_outputs):
+        return ScorerResult(
+            passed=True,
+            data=PerTurnLLMPayload(
+                overall_pass=True,
+                turns=[TurnVerdict(turn_idx=0, dimensions={"q": LLMDimensionVerdict(score="pass", reasoning="ok")})],  # type: ignore[arg-type]
+            ),
+        )
+
+
+class TestPipelineForceFailOnPerTurnJudgeErrored:
+    """The force-fail invariant must hold for ``per_turn_llm.v1`` too."""
+
+    def test_partial_per_turn_error_forces_fail_and_synthetic_check(self, setup_scenario: tuple[Path, Path]) -> None:
+        _, outcomes_root = setup_scenario
+        scorers = [_PassingRulesScorer(), _PartialPerTurnJudgeErroredScorer()]
+        score = score_scenario(outcomes_root / "g" / "t", outcomes_root, scorers)
+
+        assert score.overall_pass is False
+        rules = score.scores.get("rules")
+        assert isinstance(rules, RulesPayload)
+        synthetic = [c for c in rules.checks if c.check == "llm_scorer_ran"]
+        assert len(synthetic) == 1
+        assert synthetic[0].passed is False
+        assert "rate_limited" in synthetic[0].details
+
+        llm = score.scores.get("llm")
+        assert isinstance(llm, PerTurnLLMPayload)
+        assert llm.judge_errored is True
+
+        dumped = json.loads(score.model_dump_json())
+        assert dumped["scores"]["llm"]["schema_version"] == "per_turn_llm.v1"
+        assert dumped["scores"]["llm"]["judge_errored"] is True
+        assert dumped["scores"]["llm"]["judge_error_type"] == "rate_limited"
+
+    def test_clean_per_turn_payload_passes_through(self, setup_scenario: tuple[Path, Path]) -> None:
+        _, outcomes_root = setup_scenario
+        scorers = [_PassingRulesScorer(), _CleanPerTurnScorer()]
         score = score_scenario(outcomes_root / "g" / "t", outcomes_root, scorers)
         assert score.overall_pass is True
         rules = score.scores.get("rules")

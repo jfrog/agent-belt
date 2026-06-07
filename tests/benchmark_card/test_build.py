@@ -84,6 +84,7 @@ class TestBuildCard:
                     "schema_version": SCHEMA_VERSION,
                     "scores": {
                         "llm": {
+                            "schema_version": "llm.v1",
                             "dimensions": ["correctness"],
                             "usage": {
                                 "backends": [
@@ -173,6 +174,49 @@ class TestBuildCard:
         (run_dir / RUN_META_FILE).write_text(json.dumps({"started_at": recorded}))
         card = build_card(run_dir, {})
         assert card.started_at == recorded
+
+    def test_collect_judges_surfaces_every_llm_shaped_scorer_key(self, tmp_path: Path) -> None:
+        """Multi-judge non-consensus + per-turn payloads surface in the card.
+
+        ``--scorer-config`` with two judges writes ``scores["primary"]``
+        + ``scores["adversarial"]``; a per-turn judge writes
+        ``scores["turn_judge"]`` with ``schema_version: per_turn_llm.v1``.
+        The benchmark-card collector must surface every LLM-shaped
+        backend, not just the conventional ``"llm"`` key, so a reviewer
+        reading the card sees which models scored the run.
+        """
+        run_dir = tmp_path / "20260101-000000-multijudge"
+        run_dir.mkdir()
+        (run_dir / RUN_META_FILE).write_text(json.dumps({"started_at": "2026-01-01T00:00:00Z"}))
+        scn_dir = run_dir / "g" / "s"
+        scn_dir.mkdir(parents=True)
+        (scn_dir / SCORE_FILE).write_text(
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "scores": {
+                        "primary": {
+                            "schema_version": "llm.v1",
+                            "dimensions": ["correctness"],
+                            "usage": {"backends": [{"provider": "openai", "model": "gpt-5.4", "base_url": ""}]},
+                        },
+                        "adversarial": {
+                            "schema_version": "llm.v1",
+                            "dimensions": ["safety"],
+                            "usage": {"backends": [{"provider": "anthropic", "model": "claude-3-7", "base_url": ""}]},
+                        },
+                        "turn_judge": {
+                            "schema_version": "per_turn_llm.v1",
+                            "dimensions": ["turn_correctness"],
+                            "usage": {"backends": [{"provider": "azure", "model": "gpt-5-turn", "base_url": ""}]},
+                        },
+                    },
+                }
+            )
+        )
+        card = build_card(run_dir, {})
+        models = sorted(j.model for j in card.scoring.judges)
+        assert models == ["claude-3-7", "gpt-5-turn", "gpt-5.4"]
 
     def test_modes_are_read_from_scoring_block(self, tmp_path: Path) -> None:
         # ``--modes`` is parsed by ``eval``/``score``, never by ``run``;

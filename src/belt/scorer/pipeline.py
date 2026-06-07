@@ -28,10 +28,12 @@ from belt.cli_utils import parse_kv_args
 from belt.constants import SCHEMA_VERSION, TURN_CLI_TEMPLATE, TURN_OUTPUT_TEMPLATE, TURN_STATE_TEMPLATE
 from belt.entities import ScenarioScore, TurnOutput
 from belt.parser.scenario import ScenarioLoader
+from belt.scenario import Scenario
 from belt.schema import check_schema_version
 from belt.scorer import BaseScorer, ConsensusScorer, LLMScorer, RuleBasedScorer
+from belt.scorer.config_schema import JudgeDef, ScorerConfigFile
 from belt.scorer.entities import JudgeConfig
-from belt.scorer.payloads import CheckEntry, LLMPayload, RulesPayload, ScorerPayload
+from belt.scorer.payloads import CheckEntry, LLMPayload, PerTurnLLMPayload, RulesPayload, ScorerPayload
 from belt.scorer.scenario_map import map_to_scenario, parse_dimension_defs
 
 if TYPE_CHECKING:
@@ -64,37 +66,39 @@ def build_judge_config_from_scorer_args(scorer_args: dict[str, str]) -> JudgeCon
     return load_judge_config(cli_overrides=overrides)
 
 
-def load_scorer_config(config_path: str) -> tuple[list[dict], str | None]:
+def load_scorer_config(config_path: str) -> tuple[list[JudgeDef], str | None]:
     """Load multi-judge config from YAML.
 
     Returns ``(judge_defs, consensus_strategy)``. ``consensus_strategy`` is
     ``None`` when the ``consensus`` key is absent (independent judges).
 
-    Raises ``ConfigError`` on bad path or missing ``judges`` section.
+    Validation lives in :class:`belt.scorer.config_schema.ScorerConfigFile`:
+    unknown top-level / per-judge keys, name clashes with reserved
+    scorer keys (``rules`` / ``llm``), out-of-range numerics, and bad
+    ``resolution`` / ``evidence_scope`` literals are all caught here
+    with a structured Pydantic error rather than at the call site that
+    would silently misread the dict.
     """
     import yaml
+    from pydantic import ValidationError
 
     from belt.errors import ConfigError
-    from belt.scorer.llm.consensus import CONSENSUS_STRATEGIES
 
     path = Path(config_path)
     if not path.exists():
         raise ConfigError(f"Scorer config not found: {config_path}")
     with open(path) as f:
-        data = yaml.safe_load(f)
-    judges = data.get("judges", {})
-    if not judges:
-        raise ConfigError(f"No 'judges' section in {config_path}")
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ConfigError(f"Scorer config {config_path}: top-level must be a mapping, got {type(data).__name__}")
 
-    consensus = data.get("consensus")
-    if consensus is not None:
-        consensus = str(consensus).strip().lower()
-        if consensus not in CONSENSUS_STRATEGIES:
-            raise ConfigError(
-                f"Unknown consensus strategy '{consensus}'. Valid: {', '.join(sorted(CONSENSUS_STRATEGIES))}"
-            )
+    try:
+        parsed = ScorerConfigFile.model_validate(data)
+        judge_defs = parsed.to_judge_defs()
+    except (ValidationError, ValueError) as exc:
+        raise ConfigError(f"Invalid scorer config {config_path}: {exc}") from exc
 
-    return [{"name": name, **cfg} for name, cfg in judges.items()], consensus
+    return judge_defs, parsed.consensus
 
 
 def build_scorers(
@@ -131,41 +135,29 @@ def build_scorers(
                 from belt.agent.scoring import ScoringStrategy
 
                 overrides: dict[str, object] = {}
-                if "model" in jdef:
-                    overrides["model"] = jdef["model"]
-                try:
-                    if "temperature" in jdef:
-                        overrides["temperature"] = float(jdef["temperature"])
-                    if "seed" in jdef:
-                        overrides["seed"] = int(jdef["seed"])
-                    if "max_tokens" in jdef:
-                        overrides["max_tokens"] = int(jdef["max_tokens"])
-                    if "cost_per_prompt_token" in jdef:
-                        overrides["cost_per_prompt_token"] = float(jdef["cost_per_prompt_token"])
-                    if "cost_per_completion_token" in jdef:
-                        overrides["cost_per_completion_token"] = float(jdef["cost_per_completion_token"])
-                except (TypeError, ValueError) as e:
-                    from belt.errors import ConfigError
-
-                    raise ConfigError(
-                        f"Invalid numeric value in scorer config judge '{jdef.get('name', '?')}': {e}"
-                    ) from e
+                if jdef.model is not None:
+                    overrides["model"] = jdef.model
+                if jdef.temperature is not None:
+                    overrides["temperature"] = jdef.temperature
+                if jdef.seed is not None:
+                    overrides["seed"] = jdef.seed
+                if jdef.max_tokens is not None:
+                    overrides["max_tokens"] = jdef.max_tokens
+                if jdef.max_prompt_chars is not None:
+                    overrides["max_prompt_chars"] = jdef.max_prompt_chars
+                if jdef.cost_per_prompt_token is not None:
+                    overrides["cost_per_prompt_token"] = jdef.cost_per_prompt_token
+                if jdef.cost_per_completion_token is not None:
+                    overrides["cost_per_completion_token"] = jdef.cost_per_completion_token
 
                 from belt.config import load_judge_config
 
                 cfg = load_judge_config(cli_overrides=overrides)
-                try:
-                    max_r = int(jdef.get("max_retries", "5"))
-                except (TypeError, ValueError):
-                    max_r = 5
 
                 strategy = None
-                dims = jdef.get("dimensions")
-                preamble = jdef.get("system_preamble")
-                extend = jdef.get("extend_defaults", False)
-                if dims or preamble:
-                    parsed_dims = parse_dimension_defs(dims or [])
-                    if extend:
+                if jdef.dimensions or jdef.system_preamble:
+                    parsed_dims = parse_dimension_defs(jdef.dimensions or [])
+                    if jdef.extend_defaults:
                         from belt.agent.scoring import GENERIC_DIMENSIONS
 
                         existing_names = {d.name for d in parsed_dims}
@@ -173,11 +165,18 @@ def build_scorers(
                         parsed_dims = base + parsed_dims
                     strategy = ScoringStrategy(
                         dimensions=parsed_dims,
-                        agent_context=preamble or "",
+                        agent_context=jdef.system_preamble or "",
                     )
 
-                s = LLMScorer(cfg, max_retries=max_r, strategy=strategy, skip_availability=skip_availability)
-                s.judge_name = jdef["name"]
+                s = LLMScorer(
+                    cfg,
+                    max_retries=jdef.max_retries,
+                    strategy=strategy,
+                    skip_availability=skip_availability,
+                    resolution=jdef.resolution,
+                    evidence_scope=jdef.evidence_scope,
+                )
+                s.judge_name = jdef.name
                 config_llm_scorers.append(s)
 
             if consensus_strategy and len(config_llm_scorers) >= 2:
@@ -262,6 +261,94 @@ def validate_scorers(
         else:
             descriptions.append(s.name)
     return descriptions
+
+
+def _iter_per_turn_judges(scorers: list[BaseScorer]) -> list[LLMScorer]:
+    """Yield all LLM scorers running at ``resolution="turn"``.
+
+    A consensus block is per-turn iff every sub-judge is per-turn
+    (enforced at :class:`ConsensusScorer.__init__`), so we flatten
+    consensus into its sub-judges so the per-turn preflight can check
+    each judge by its declared name.
+    """
+    out: list[LLMScorer] = []
+    for s in scorers:
+        if isinstance(s, ConsensusScorer):
+            for sub in s.judges:
+                if sub.resolution == "turn":
+                    out.append(sub)
+        elif isinstance(s, LLMScorer) and s.resolution == "turn":
+            out.append(s)
+    return out
+
+
+def validate_per_turn_judges_against_scenarios(
+    scorers: list[BaseScorer],
+    scenarios: list[Scenario],
+) -> None:
+    """Preflight: every per-turn judge must end up voting at least once.
+
+    For each per-turn judge AND each scenario, scan
+    ``Turn.llm_judges[judge.judge_name]`` and refuse the run when:
+
+    - Every turn in the scenario carries ``skip=True`` for this judge
+      (``"all_turns_skipped"`` static case). Such a scenario would
+      enter :meth:`LLMScorer._score_per_turn` and exit with
+      ``judge_errored=True, judge_error_type="all_turns_skipped"`` -
+      the runtime taint rule handles it correctly, but catching it
+      pre-run gives the author a clear authoring error rather than a
+      midway abort.
+
+    - A turn references a judge that is not declared at the
+      scorer-config level (typo). Without this check the per-turn
+      override is silently ignored.
+
+    Raises :class:`belt.errors.ConfigError` with the offending
+    judge / scenario / turn so the author can fix the YAML or
+    scenario before any judge call happens.
+    """
+    from belt.errors import ConfigError
+
+    per_turn_judges = _iter_per_turn_judges(scorers)
+    if not per_turn_judges:
+        return
+
+    declared_judges = {j.judge_name for j in per_turn_judges}
+
+    errors: list[str] = []
+    for scenario in scenarios:
+        # Catch typos: a turn references a judge name that isn't declared.
+        for i, turn in enumerate(scenario.turns):
+            for judge_name in turn.llm_judges:
+                if judge_name not in declared_judges:
+                    errors.append(
+                        f"scenario {scenario.name!r} turn {i}: ``llm_judges[{judge_name!r}]`` "
+                        f"references an unknown judge. Declared per-turn judges: "
+                        f"{sorted(declared_judges) or 'none'}"
+                    )
+
+        # Catch all-skipped: every turn skipped this per-turn judge.
+        for judge in per_turn_judges:
+            if not scenario.turns:
+                continue
+            skips = 0
+            mentions = 0
+            for turn in scenario.turns:
+                override = turn.llm_judges.get(judge.judge_name)
+                if override is None:
+                    continue
+                mentions += 1
+                if override.skip:
+                    skips += 1
+            if mentions > 0 and skips == mentions and mentions == len(scenario.turns):
+                errors.append(
+                    f"scenario {scenario.name!r}: every turn carries ``llm_judges[{judge.judge_name!r}].skip=true`` - "
+                    f"per-turn judge {judge.judge_name!r} would never vote. Remove the judge from the scorer "
+                    "config, drop the skip overrides, or omit this scenario from the run."
+                )
+
+    if errors:
+        raise ConfigError("Per-turn judge preflight failed:\n  - " + "\n  - ".join(errors))
 
 
 def resolve_scorer_args(args: argparse.Namespace) -> dict[str, str]:
@@ -414,7 +501,7 @@ def score_scenario(
             # reaches every exporter and threshold gate uniformly, and force
             # overall_pass=False so a passing rules scorer cannot silently
             # green-light a scenario whose judge never voted.
-            if isinstance(payload, LLMPayload) and payload.judge_errored:
+            if isinstance(payload, (LLMPayload, PerTurnLLMPayload)) and payload.judge_errored:
                 etype = payload.judge_error_type or "other"
                 missing_checks.append(
                     CheckEntry(

@@ -25,7 +25,7 @@ from belt._safe import md_safe
 from belt.exporter.base import BaseExporter
 from belt.exporter.entities import ExportContext
 from belt.scorer.entities import DOWNGRADE_VERDICT_SET
-from belt.scorer.payloads import LLMPayload, RulesPayload
+from belt.scorer.payloads import PerTurnLLMPayload, RulesPayload, iter_llm_payloads, iter_llm_verdicts
 
 
 class MarkdownExporter(BaseExporter):
@@ -80,19 +80,45 @@ class MarkdownExporter(BaseExporter):
                             suffix = f" - {md_safe(c.details)}" if c.details else ""
                             lines.append(f"- `rules/{md_safe(c.dimension)}/{md_safe(c.check)}`{suffix}")
                         lines.append("")
-                llm = s.scores.get("llm")
-                if isinstance(llm, LLMPayload):
-                    llm_failures = [
-                        (dim, llm.dimensions[dim])
-                        for dim in sorted(llm.dimensions)
-                        if llm.dimensions[dim].score in DOWNGRADE_VERDICT_SET
+                # Walk every LLM-shaped payload so multi-judge and
+                # per-turn downgrades both appear in the exporter
+                # markdown. Per-judge namespace keeps the bullets
+                # attributable when the run has more than one judge.
+                for name, payload in iter_llm_payloads(s):
+                    rows = [
+                        (dim, score_token, reasoning)
+                        for dim, score_token, reasoning in iter_llm_verdicts(payload)
+                        if score_token in DOWNGRADE_VERDICT_SET
                     ]
-                    if llm_failures:
-                        lines.append("**LLM judgements:**")
-                        for dim, verdict in llm_failures:
-                            lines.append(
-                                f"- `llm/{md_safe(dim)}` · **{md_safe(verdict.score)}** - {md_safe(verdict.reasoning)}"
-                            )
+                    if not rows:
+                        continue
+                    label = "LLM judgements" if name == "llm" else f"LLM judgements ({md_safe(name)})"
+                    lines.append(f"**{label}:**")
+                    prefix = "llm" if name == "llm" else f"llm[{md_safe(name)}]"
+                    for dim, score_token, reasoning in rows:
+                        lines.append(f"- `{prefix}/{md_safe(dim)}` · **{md_safe(score_token)}** - {md_safe(reasoning)}")
+                    lines.append("")
+
+                    # Per-turn nested detail block under the rolled-up
+                    # rubric: surface which turn(s) dragged the
+                    # dimension down so a reader can attribute the
+                    # downgrade without diving into score.json.
+                    if isinstance(payload, PerTurnLLMPayload):
+                        lines.append(f"<details><summary>Per-turn detail ({md_safe(name)})</summary>")
+                        lines.append("")
+                        for tv in payload.turns:
+                            if not tv.dimensions:
+                                if tv.judge_errored:
+                                    etype = md_safe(tv.judge_error_type or "other")
+                                    lines.append(f"- Turn {tv.turn_idx}: judge errored (`{etype}`)")
+                                continue
+                            for dim, vd in tv.dimensions.items():
+                                lines.append(
+                                    f"- Turn {tv.turn_idx} · `{md_safe(dim)}` · "
+                                    f"**{md_safe(vd.score)}** - {md_safe(vd.reasoning)}"
+                                )
+                        lines.append("")
+                        lines.append("</details>")
                         lines.append("")
 
         if results.reliability:

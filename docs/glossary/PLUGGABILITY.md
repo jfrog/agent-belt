@@ -344,8 +344,10 @@ declare an `belt.scorers` entry point in `pyproject.toml`.
 `schema_version: Literal["<scorer>.v<N>"] = "<scorer>.v<N>"` as the
 discriminator - the **only** place that string lives; registration and
 dispatch read it back through `model_fields`. Built-ins
-(`belt.scorer.payloads`): `RulesPayload` (`rules.v1`) and
-`LLMPayload` (`llm.v1`).
+(`belt.scorer.payloads`): `RulesPayload` (`rules.v1`),
+`LLMPayload` (`llm.v1`), and `PerTurnLLMPayload` (`per_turn_llm.v1` -
+aggregates one `TurnVerdict` per scenario turn for per-turn LLM
+judging; see [SCORING.md → §2.10](SCORING.md#210-per-turn-llm-judging)).
 
 The 5 contract rules every payload must follow:
 
@@ -370,7 +372,12 @@ The 5 contract rules every payload must follow:
 3. Consumers walk payloads via `iter_dimension_feedback(score)` (or
    `isinstance` on the typed classes), **never** by indexing
    `score.scores[...]` as a dict. Enforced by the design check for
-   plugin code.
+   plugin code. LLM-shaped consumers (multi-judge non-consensus,
+   per-turn judging) should additionally use
+   `iter_llm_payloads(score)` / `iter_llm_verdicts(payload)` to walk
+   both `LLMPayload` and `PerTurnLLMPayload` uniformly - hard-coding
+   `score.scores["llm"]` silently drops every renamed multi-judge
+   key and every per-turn payload.
 4. Numeric scores normalise to `0.0-1.0` or `None`. For categorical
    scorers use `belt.scorer.payloads.level_to_score` to map
    `high`/`medium`/`low` consistently with the built-in LLM scorer.

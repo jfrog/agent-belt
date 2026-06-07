@@ -1,0 +1,49 @@
+# Per-Turn LLM Judging Configuration
+#
+# Usage:
+#   belt eval examples/scenarios/showcase/correctness/per_turn_judging.json \
+#     --scorer-config examples/scorer-config/per-turn-judging.yaml --modes llm
+#
+# Per-turn judges score each turn independently using the dimensions
+# the scenario declares under ``turns[i].llm_judges["<judge_name>"]``.
+# Each turn gets its own rubric (and optional instruction / evidence_files
+# overrides) so multi-turn agent flows can assert "in turn 0 it must
+# acknowledge the lucky number; in turn 1 it must echo verbatim".
+#
+# The overall scenario passes only when EVERY turn passes the judge
+# rubric for EVERY configured dimension (worst-of-turns rollup).
+#
+# Compare with examples/scorer-config/judges.yaml (scenario-level
+# multi-judge) and examples/scorer-config/consensus.yaml (majority
+# vote across judges).
+
+judges:
+  # Per-turn judge: scenario declares the per-turn dimensions /
+  # instruction / evidence_files inside each Turn under
+  # ``llm_judges["turn_judge"]``. Defaults below apply to any turn
+  # whose ``llm_judges`` does not override them.
+  turn_judge:
+    model: openai/gpt-4.1-mini
+    temperature: 0.0
+    seed: 2008
+    # The judge writes a PerTurnLLMPayload (one TurnVerdict per turn)
+    # instead of the default scenario-level LLMPayload.
+    resolution: turn
+    # ``isolated``  -> judge sees only the turn under evaluation.
+    # ``cumulative`` -> judge sees this turn plus all prior turns.
+    # Pick ``cumulative`` when the rubric needs context from earlier
+    # turns to decide (e.g. "did the agent now contradict turn 0?").
+    evidence_scope: cumulative
+    # Default dimensions used by any turn that does not override.
+    # A turn override with ``extend_default_dimensions: true`` adds
+    # its dimensions on top of these; with ``false`` (default) the
+    # turn replaces them entirely.
+    dimensions:
+      - name: turn_correctness
+        description: "Did the agent's reply this turn satisfy the per-turn instruction below?"
+        kind: ternary
+    system_preamble: >-
+      You are a turn-level evaluator for an agentic CLI. Score ONLY
+      the most recent agent reply against the per-turn rubric
+      provided in the user message. Prior turns appear for context;
+      do not re-score them.

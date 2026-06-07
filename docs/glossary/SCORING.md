@@ -318,6 +318,115 @@ The LLM scorer caches verdicts by content hash - identical inputs
 results. Disk budget controlled by `BELT_CACHE_MAX_BYTES`
 ([CONFIGURATION.md → §3.3](CONFIGURATION.md#33-output-paths-and-disk-budgets)).
 
+### 2.10. Per-turn LLM judging
+
+Scenario-level judging produces one verdict per dimension over the
+whole conversation. **Per-turn judging** runs one judge call per
+turn with a per-turn rubric, so you can declare "in turn 0 the
+agent must reach tool X with arg Y; in turn 1 it must recover from
+the error; in turn 2 it must summarise without hallucinating" as
+distinct, testable assertions instead of a single rolled-up verdict.
+
+Enabled per judge in `--scorer-config`:
+
+```yaml
+judges:
+  per_turn_judge:
+    model: openai/gpt-5.4-mini
+    resolution: turn              # default: scenario
+    evidence_scope: cumulative    # default: isolated
+    dimensions:
+      - {name: stepped_correctly, kind: ternary}
+```
+
+Per-turn rubrics, dimension overrides, evidence slices, and
+turn-skip are declared on the scenario's `Turn.llm_judges` map (see
+[SCENARIOS.md → §10 per-turn judging](SCENARIOS.md#10-per-turn-llm-judging)).
+
+#### 2.10.1. Resolution
+
+| Value | Behaviour |
+|---|---|
+| `scenario` (default) | One judge call over the full conversation. Today's behaviour. |
+| `turn` | One judge call per scenario turn, each with its own rubric, dimension set, and evidence slice. Per-dimension verdicts roll up via worst-of-turns into the headline dimension cell. |
+
+#### 2.10.2. Evidence scope
+
+Per-turn judges control what conversation history each turn's
+prompt carries:
+
+| Value | Behaviour |
+|---|---|
+| `isolated` (default) | Only the current turn's `### Turn N` block reaches the judge. Cheapest; correct for self-contained per-turn rubrics. |
+| `cumulative` | Turns `[0..i]` reach the judge so the rubric can reference earlier state ("did the agent recover from the turn-1 error?"). |
+
+> **Give each turn its own rubric.** Per-turn judging is meaningful when
+> each turn is graded against a dedicated dimension declared in the
+> scenario's `llm_judges[...].dimensions` (or the scorer-config judge's
+> `dimensions`). A per-turn judge that declares *no* dimensions falls
+> back to the generic whole-run dimensions (`execution` / `trajectory` /
+> `response_quality` / `efficiency`), which are designed to grade a whole
+> conversation and produce noisy `low` verdicts on a single `isolated`
+> turn. belt logs a one-time warning per judge when this fallback
+> happens; fix it by declaring a per-turn rubric or using
+> `evidence_scope: cumulative`.
+
+#### 2.10.3. Composition with multi-judge and `--trials`
+
+Per-turn judges compose with every existing surface:
+
+- **Multi-judge**: declare two per-turn judges in `--scorer-config`
+  - both surface independently in `stats["scorers"]`, the CSV
+  sidecar, JUnit per-`(scenario, scorer_key, dim)` testcases, and
+  per-judge sections in the markdown summary.
+- **Consensus**: `ConsensusScorer` enforces uniform resolution
+  across the pool (mixed `scenario` + `turn` rejects at
+  `__init__` - the payload shapes are structurally different).
+  Per-turn consensus aggregates per-`(turn_idx, dim)` majorities
+  and records `(turn_idx, dimension, votes)` disagreements.
+- **`--trials N` + pass@k / pass^k**: reliability metrics are
+  computed from `PerTurnLLMPayload.overall_pass`, identical to
+  the scenario-level path.
+
+#### 2.10.4. Cost amplification ceiling
+
+Per-turn judging multiplies the LLM-call count by the number of
+turns. Three hard caps prevent runaway:
+
+| Cap | Where | Value |
+|---|---|---|
+| `Scenario.turns` length | `belt/scenario.py` | 100 |
+| `Turn.llm_judges` dict size | `belt/scenario.py` | 10 |
+| `JudgeDef.dimensions` length | `belt/scorer/config_schema.py` | 50 |
+
+Worst-case per-scenario judge call count: `100 × 10 × --trials N`.
+
+#### 2.10.5. Preflight validation
+
+Two failure modes catch authoring bugs before any judge call:
+
+- **Unknown judge name** in `Turn.llm_judges[<name>]` rejects with
+  a hint listing declared judges.
+- **All-turns-skipped** (every turn declares `skip: true` for the
+  only judge) rejects so a scenario can never pass without being
+  judged. A defence-in-depth runtime taint also fires
+  (`judge_errored=True`, `judge_error_type="all_turns_skipped"`,
+  `overall_pass=False`) to handle dynamic edge cases.
+
+#### 2.10.6. Security model (untrusted-input fences)
+
+Per-turn override fields flow through the same threat-model
+fences as the scenario-level path:
+
+| Field | Defence |
+|---|---|
+| `instruction` | Closing `</scenario_instruction>` tags neutralised; capped at 10 000 chars. |
+| `evidence_files` | `..` and absolute paths rejected via the scenario-level traversal guard; closing `</evidence_file>` tags neutralised; path attribute `"` escaped to `&quot;`. |
+| `JudgeDef.name` | ASCII-only `[A-Za-z0-9._-]{1,64}`; shell / markup metacharacters rejected; reserved names `rules` / `llm` rejected. |
+| `--scorer-config` YAML | Pydantic `extra="forbid"` - unknown keys reject at load. |
+
+Pinned by `tests/scorer/llm/test_per_turn_security.py`.
+
 ## 3. Multi-judge scoring
 
 Run multiple LLM judges (different models / temperatures / dimensions
@@ -341,6 +450,19 @@ judges:
 ```bash
 belt eval scenarios/ --scorer-config judges.yaml --modes llm
 ```
+
+When `consensus:` is **omitted**, each declared judge writes its
+verdicts under its own key in `ScenarioScore.scores`
+(e.g. `scores["correctness"]`, `scores["safety"]`). Aggregators
+walk every LLM-shaped payload via `iter_llm_payloads` so the result
+table, `stats["scorers"]`, markdown step-summary, CSV, JUnit per-
+`(scenario, scorer_key, dim)` testcases, `belt view`, `belt
+compare`, and the benchmark card all surface every judge
+independently.
+
+When `consensus:` is set the bundle produces a single
+`ConsensusScorer` whose merged verdict lives under `scores["llm"]`
+(majority / unanimous / any vote across the sub-judges).
 
 ## 4. Thresholds
 
