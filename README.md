@@ -188,6 +188,7 @@ file, no duplication:
 | Scenario authoring + JSON schema reference | [SCENARIOS.md](docs/glossary/SCENARIOS.md) |
 | Scoring (rules + LLM judges, multi-judge, thresholds) | [SCORING.md](docs/glossary/SCORING.md) |
 | Layered configuration, env vars, security toggles | [CONFIGURATION.md](docs/glossary/CONFIGURATION.md) |
+| Sandbox providers, kernel invariants, network policy | [SANDBOXING.md](docs/glossary/SANDBOXING.md) |
 | CLI subcommand index, workflows, progress modes | [CLI.md](docs/glossary/CLI.md) |
 | CI integration, threshold gating, agent install/auth recipes | [CI.md](docs/glossary/CI.md) |
 | Plugin architecture (agents, scorers, exporters) | [PLUGGABILITY.md](docs/glossary/PLUGGABILITY.md) |

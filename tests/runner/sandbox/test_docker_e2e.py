@@ -249,12 +249,10 @@ def test_e2e_writes_outside_worktree_and_extras_fail(tmp_path: Path) -> None:
 
 
 def test_e2e_runs_as_unprivileged_user_not_root(tmp_path: Path) -> None:
-    # The reference image declares ``USER belt`` (uid 1000); the runner
-    # does not currently override it (the docstring mentions
-    # ``--user 1000:1000`` belt-and-suspenders, but the canonical
-    # source of truth is the image USER). Either way, the container
-    # MUST NOT run as root -- a regression that drops USER from the
-    # image or adds ``--user 0`` to the runner would break this.
+    # Non-root is enforced by the image's ``USER belt`` (uid 1000), not by
+    # the runner -- the runner never passes ``--user``. The container MUST
+    # NOT run as root: a regression that drops ``USER`` from the image or
+    # adds ``--user 0`` to the runner would break this.
     result = _run_in_sandbox(tmp_path, "import os; print(os.getuid())")
     assert result.returncode == 0, result.stderr
     uid = int(result.stdout.strip())
