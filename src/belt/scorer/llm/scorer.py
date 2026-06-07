@@ -613,6 +613,12 @@ class LLMScorer(BaseScorer):
             logger.error("Backend auth failed: {}", e)
             raise JudgeInfraError("auth_failed", f"Backend auth failed: {e}") from e
 
+        # Mutable list wrapping headers so the auth-retry path can swap in
+        # fallback headers without redefining _post — the backoff decorator
+        # captures _post at decoration time, so nonlocal reassignment would not
+        # affect the closure. Single-element list is the canonical Python idiom.
+        _headers_ref: list[dict[str, str]] = [headers]
+
         @backoff.on_exception(
             backoff.expo,
             httpx.HTTPStatusError,
@@ -623,7 +629,7 @@ class LLMScorer(BaseScorer):
             ),
         )
         def _post() -> httpx.Response:
-            resp = httpx.post(url, json=body, headers=headers, timeout=120)
+            resp = httpx.post(url, json=body, headers=_headers_ref[0], timeout=120)
             resp.raise_for_status()
             return resp
 
@@ -631,7 +637,50 @@ class LLMScorer(BaseScorer):
             resp = _post()
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
-            error_body = e.response.text[:300]
+            primary_body = e.response.text[:300]
+            # 401/403: ask the backend whether an alternate auth header is
+            # worth retrying once. This covers gateways whose WAF rejects
+            # one of two interchangeable auth styles (notably JFrog's
+            # gateway accepting Bearer but not x-api-key from CI runners).
+            # The hook returns None for backends with no fallback.
+            if code in (401, 403):
+                retry_headers = backend.auth_retry_headers(_headers_ref[0])
+                if retry_headers is not None:
+                    logger.warning(
+                        "LLM judge HTTP {} with primary auth header; "
+                        "retrying once with backend-supplied fallback headers.",
+                        code,
+                    )
+                    _headers_ref[0] = retry_headers
+                    try:
+                        resp = _post()
+                    except httpx.HTTPStatusError as e2:
+                        retry_code = e2.response.status_code
+                        retry_body = e2.response.text[:300]
+                        if retry_code in (401, 403, 404):
+                            from belt.scorer.llm.judge_hints import format_judge_error_hint
+
+                            hint = format_judge_error_hint(retry_code, retry_body)
+                            raise ScorerError(
+                                f"LLM judge fatal HTTP {code}+{retry_code} (auth retry didn't help):\n"
+                                f"  Primary: {primary_body[:300]}\n"
+                                f"  Retry:   {retry_body[:300]}\n"
+                                f"  {hint}"
+                            ) from e2
+                        logger.error("LLM judge HTTP {}: {}", retry_code, retry_body)
+                        etype = backend.classify_error(e2) or "other"
+                        raise JudgeInfraError(etype, f"LLM judge HTTP {retry_code}: {retry_body}") from e2
+                    except httpx.TimeoutException as e2:
+                        logger.error("LLM judge auth-retry request timed out (120s)")
+                        etype = backend.classify_error(e2) or "timeout"
+                        raise JudgeInfraError(etype, "LLM judge auth-retry request timed out (120s)") from e2
+                    except httpx.HTTPError as e2:
+                        logger.error("LLM judge auth-retry request failed: {}", e2)
+                        etype = backend.classify_error(e2) or "other"
+                        raise JudgeInfraError(etype, f"LLM judge auth-retry request failed: {e2}") from e2
+                    else:
+                        backend.record_auth_retry_success()
+                        return self._finalize(resp, cache_key, backend)
             # 401/403/404 are config bugs the user must fix before any more
             # scoring can succeed; aborting the run is faster feedback than
             # producing N silent "judge errored" verdicts in a row. The
@@ -642,14 +691,14 @@ class LLMScorer(BaseScorer):
                 from belt.scorer.llm.judge_hints import format_judge_error_hint
 
                 raise ScorerError(
-                    f"LLM judge fatal HTTP {code}: {error_body}\n" f"{format_judge_error_hint(code, error_body)}"
+                    f"LLM judge fatal HTTP {code}: {primary_body}\n" f"{format_judge_error_hint(code, primary_body)}"
                 ) from e
             # Transient: classify via the backend so provider-specific shapes
             # (Ollama, custom OpenAI-compatible servers) map onto the same
             # JUDGE_ERROR_TYPES tokens through one extension point.
-            logger.error("LLM judge HTTP {}: {}", code, error_body)
+            logger.error("LLM judge HTTP {}: {}", code, primary_body)
             etype = backend.classify_error(e) or "other"
-            raise JudgeInfraError(etype, f"LLM judge HTTP {code}: {error_body}") from e
+            raise JudgeInfraError(etype, f"LLM judge HTTP {code}: {primary_body}") from e
         except httpx.TimeoutException as e:
             logger.error("LLM judge request timed out (120s)")
             etype = backend.classify_error(e) or "timeout"
@@ -669,13 +718,26 @@ class LLMScorer(BaseScorer):
             etype = backend.classify_error(e) or "other"
             raise JudgeInfraError(etype, f"LLM judge unexpected error: {e}") from e
 
+        return self._finalize(resp, cache_key, backend)
+
+    def _finalize(
+        self,
+        resp: httpx.Response,
+        cache_key: "str | None",
+        backend: BaseJudgeBackend,
+    ) -> "tuple[JudgeVerdict | None, dict[str, Any] | None]":
         verdict, usage = self._parse_response(resp, backend)
-
-        # Store in cache
-        if verdict is not None and self.cache is not None:
-            self.cache.put(cache_key, {"verdict": verdict.model_dump(mode="json"), "usage": usage or {}})
-
+        self._cache_put(cache_key, verdict, usage)
         return verdict, usage
+
+    def _cache_put(
+        self,
+        cache_key: str | None,
+        verdict: "JudgeVerdict | None",
+        usage: "dict[str, Any] | None",
+    ) -> None:
+        if verdict is not None and self.cache is not None and cache_key is not None:
+            self.cache.put(cache_key, {"verdict": verdict.model_dump(mode="json"), "usage": usage or {}})
 
     def _parse_response(
         self, resp: httpx.Response, backend: BaseJudgeBackend

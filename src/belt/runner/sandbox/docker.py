@@ -11,8 +11,10 @@ Implementation choices and their rationale:
   parsing of ``docker``'s exit codes; the benefit is zero new dependencies.
 - **Filesystem + capability isolation are first-class.** The wrapper sets
   ``--cap-drop=ALL``, ``--security-opt=no-new-privileges``, ``--read-only``
-  rootfs, ``--user 1000:1000``, and bind-mounts only the worktree (plus
-  scenario-declared ``writable_paths``). An agent inside the container
+  rootfs, runs as the image's non-root ``USER`` (the reference image
+  declares ``USER belt``, uid 1000; the runner never overrides it back to
+  root), and bind-mounts only the worktree (plus scenario-declared
+  ``writable_paths``). An agent inside the container
   cannot read ``$HOME`` on the host, cannot escalate, cannot mount, cannot
   ptrace, cannot write outside the worktree.
 - **Network policy has two kernel-enforced modes plus a v1 hint.**

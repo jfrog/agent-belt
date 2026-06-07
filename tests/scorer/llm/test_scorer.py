@@ -1067,3 +1067,226 @@ class TestOllamaResponseParsing:
         assert usage is not None
         assert usage["prompt_tokens"] == 200
         assert usage["completion_tokens"] == 75
+
+
+class TestJudgeRetryWithBearer:
+    """403 with x-api-key triggers one retry with Authorization: Bearer."""
+
+    def _make_responses(self):
+        """First call:403 (WAF). Second call: 200 with a valid verdict."""
+        request = httpx.Request("POST", "https://gw.example/anthropic/v1/messages")
+        resp_403 = httpx.Response(
+            403,
+            request=request,
+            text="<H1>403 ERROR</H1><H2>The request could not be satisfied",
+        )
+        resp_200 = httpx.Response(
+            200,
+            request=request,
+            json={
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "judge_verdict",
+                        "input": {"overall_pass": True},
+                    }
+                ],
+                "model": "claude-sonnet-4-5",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+        return resp_403, resp_200
+
+    def test_403_with_x_api_key_retries_with_bearer_and_succeeds(self):
+        import os
+        from unittest.mock import patch
+
+        from belt.entities import JudgeConfig
+        from belt.scorer.llm.backend import AnthropicBackend
+        from belt.scorer.llm.scorer import LLMScorer
+
+        resp_403, resp_200 = self._make_responses()
+        backend = AnthropicBackend()
+        captured_headers: list[dict[str, str]] = []
+
+        def fake_post(url, json, headers, timeout):
+            captured_headers.append(dict(headers))
+            if len(captured_headers) == 1:
+                return resp_403
+            return resp_200
+
+        env = {
+            "BELT_ANTHROPIC_API_KEY": "jwt-token",
+            "BELT_ANTHROPIC_BASE_URL": "https://gw.example",
+        }
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch("belt.scorer.llm.scorer.httpx.post", side_effect=fake_post),
+        ):
+            config = JudgeConfig(
+                model="anthropic/claude-sonnet-4-5",
+                temperature=0.0,
+                seed=2008,
+                max_tokens=4096,
+            )
+            scorer = LLMScorer(
+                config=config,
+                backend=backend,
+                cache=None,
+                max_retries=1,
+                skip_availability=True,
+            )
+            verdict, _usage = scorer._call_api(
+                system_message="judge",
+                dynamic_msg="go",
+            )
+
+        assert len(captured_headers) == 2
+        assert captured_headers[0].get("x-api-key") == "jwt-token"
+        assert "Authorization" not in captured_headers[0]
+        assert captured_headers[1].get("Authorization") == "Bearer jwt-token"
+        assert "x-api-key" not in captured_headers[1]
+        assert backend._use_bearer is True
+        assert verdict is not None
+        assert verdict.overall_pass is True
+
+    def test_403_then_401_retry_raises_scorer_error_with_both_bodies(self):
+        """403 primary +401 retry → ScorerError that includes both response bodies."""
+        import os
+        from unittest.mock import patch
+
+        from belt.entities import JudgeConfig
+        from belt.errors import ScorerError
+        from belt.scorer.llm.backend import AnthropicBackend
+        from belt.scorer.llm.scorer import LLMScorer
+
+        request = httpx.Request("POST", "https://gw.example/anthropic/v1/messages")
+        resp_403 = httpx.Response(403, request=request, text="primary-body-403")
+        resp_401 = httpx.Response(401, request=request, text="retry-body-401")
+
+        call_count = 0
+
+        def fake_post(url, json, headers, timeout):
+            nonlocal call_count
+            call_count += 1
+            return resp_403 if call_count == 1 else resp_401
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "jwt-token", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        config = JudgeConfig(model="anthropic/claude-sonnet-4-5", temperature=0.0, seed=0, max_tokens=4096)
+        post_patch = patch("belt.scorer.llm.scorer.httpx.post", side_effect=fake_post)
+        with patch.dict(os.environ, env, clear=False), post_patch:
+            scorer = LLMScorer(config=config, backend=backend, cache=None, max_retries=1, skip_availability=True)
+            with pytest.raises(ScorerError) as exc_info:
+                scorer._call_api(system_message="judge", dynamic_msg="go")
+
+        msg = str(exc_info.value)
+        assert "403" in msg
+        assert "401" in msg
+        assert "primary-body-403" in msg
+        assert "retry-body-401" in msg
+        assert "auth retry" in msg.lower()
+
+    def test_403_then_500_retry_raises_judge_infra_error(self):
+        """403 primary + 5xx retry → JudgeInfraError('other'), not ScorerError."""
+        import os
+        from unittest.mock import patch
+
+        from belt.entities import JudgeConfig
+        from belt.errors import JudgeInfraError
+        from belt.scorer.llm.backend import AnthropicBackend
+        from belt.scorer.llm.scorer import LLMScorer
+
+        request = httpx.Request("POST", "https://gw.example/anthropic/v1/messages")
+        resp_403 = httpx.Response(403, request=request, text="waf-403")
+        resp_500 = httpx.Response(500, request=request, text="internal-error")
+
+        call_count = 0
+
+        def fake_post(url, json, headers, timeout):
+            nonlocal call_count
+            call_count += 1
+            return resp_403 if call_count == 1 else resp_500
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "jwt-token", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        config = JudgeConfig(model="anthropic/claude-sonnet-4-5", temperature=0.0, seed=0, max_tokens=4096)
+        post_patch = patch("belt.scorer.llm.scorer.httpx.post", side_effect=fake_post)
+        with patch.dict(os.environ, env, clear=False), post_patch:
+            scorer = LLMScorer(config=config, backend=backend, cache=None, max_retries=1, skip_availability=True)
+            with pytest.raises(JudgeInfraError) as exc_info:
+                scorer._call_api(system_message="judge", dynamic_msg="go")
+
+        assert exc_info.value.error_type == "other"
+
+    def test_403_then_timeout_on_retry_raises_judge_infra_error(self):
+        """403 primary + timeout on retry → JudgeInfraError('timeout')."""
+        import os
+        from unittest.mock import patch
+
+        from belt.entities import JudgeConfig
+        from belt.errors import JudgeInfraError
+        from belt.scorer.llm.backend import AnthropicBackend
+        from belt.scorer.llm.scorer import LLMScorer
+
+        request = httpx.Request("POST", "https://gw.example/anthropic/v1/messages")
+        resp_403 = httpx.Response(403, request=request, text="waf-403")
+
+        call_count = 0
+
+        def fake_post(url, json, headers, timeout):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return resp_403
+            raise httpx.ReadTimeout("timed out", request=request)
+
+        backend = AnthropicBackend()
+        env = {"BELT_ANTHROPIC_API_KEY": "jwt-token", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        config = JudgeConfig(model="anthropic/claude-sonnet-4-5", temperature=0.0, seed=0, max_tokens=4096)
+        post_patch = patch("belt.scorer.llm.scorer.httpx.post", side_effect=fake_post)
+        with patch.dict(os.environ, env, clear=False), post_patch:
+            scorer = LLMScorer(config=config, backend=backend, cache=None, max_retries=1, skip_availability=True)
+            with pytest.raises(JudgeInfraError) as exc_info:
+                scorer._call_api(system_message="judge", dynamic_msg="go")
+
+        assert exc_info.value.error_type == "timeout"
+
+    def test_use_bearer_true_skips_retry(self):
+        """Once _use_bearer=True, build_request emits Bearer; a 403 does not trigger a second retry."""
+        import os
+        from unittest.mock import patch
+
+        from belt.entities import JudgeConfig
+        from belt.errors import ScorerError
+        from belt.scorer.llm.backend import AnthropicBackend
+        from belt.scorer.llm.scorer import LLMScorer
+
+        request = httpx.Request("POST", "https://gw.example/anthropic/v1/messages")
+        resp_403 = httpx.Response(403, request=request, text="still-403")
+
+        captured_headers: list[dict] = []
+
+        def fake_post(url, json, headers, timeout):
+            captured_headers.append(dict(headers))
+            return resp_403
+
+        backend = AnthropicBackend()
+        backend.record_auth_retry_success()  # pre-set: Bearer is the cached style
+        env = {"BELT_ANTHROPIC_API_KEY": "jwt-token", "BELT_ANTHROPIC_BASE_URL": "https://gw.example"}
+        config = JudgeConfig(model="anthropic/claude-sonnet-4-5", temperature=0.0, seed=0, max_tokens=4096)
+        post_patch = patch("belt.scorer.llm.scorer.httpx.post", side_effect=fake_post)
+        with patch.dict(os.environ, env, clear=False), post_patch:
+            scorer = LLMScorer(config=config, backend=backend, cache=None, max_retries=1, skip_availability=True)
+            with pytest.raises(ScorerError):
+                scorer._call_api(system_message="judge", dynamic_msg="go")
+
+        # build_request already used Bearer; auth_retry_headers returns None
+        # (no x-api-key in original headers) → only one POST was made.
+        assert len(captured_headers) == 1
+        assert captured_headers[0].get("Authorization") == "Bearer jwt-token"
+        assert "x-api-key" not in captured_headers[0]
