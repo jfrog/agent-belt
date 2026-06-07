@@ -377,7 +377,68 @@ The 5 contract rules every payload must follow:
 5. Unregistered `schema_version` raises `ValueError` at parse and
    iteration time - the framework refuses to guess at unknown shapes.
 
-## 8. Authoring an exporter
+## 8. Authoring a custom LLM judge backend
+
+`BaseJudgeBackend` is in `belt._public_api.PUBLIC_API` and therefore a stable
+public extension point. Subclass it when you need a provider that the built-in
+backends (`OpenAIBackend`, `AzureBackend`, `AnthropicBackend`, `OllamaBackend`)
+do not support, or when a gateway in front of an existing provider requires
+non-standard auth.
+
+The full abstract interface is documented in the class docstring in
+`belt.scorer.llm.backend`. Two hooks are worth calling out here because they
+interact with the dispatcher and are the most common customisation points:
+
+### 8.1. `auth_retry_headers(original_headers) → dict | None`
+
+Called by `LLMScorer._call_api` (and the preflight helper) when the first
+request returns 401 or 403. Return a replacement header dict to retry once with
+that dict instead. Return `None` (the default) to propagate the error
+immediately without retrying.
+
+Typical use: a corporate WAF that rejects one of two interchangeable auth
+header styles from certain egress IPs (e.g. rejecting `x-api-key` but
+accepting `Authorization: Bearer`).
+
+### 8.2. `record_auth_retry_success() → None`
+
+Called by the dispatcher immediately after an `auth_retry_headers` retry
+succeeds. The default no-op is sufficient for one-shot retries. Override when
+the backend caches the working auth style so subsequent requests emit it
+directly, avoiding a 401/403 round-trip on every call in a multi-trial run.
+
+```python
+from belt import BaseJudgeBackend
+
+class MyGatewayBackend(BaseJudgeBackend):
+    def __init__(self):
+        self._use_bearer = False
+
+    def auth_retry_headers(self, original_headers):
+        if "x-api-key" not in original_headers:
+            return None
+        retry = {k: v for k, v in original_headers.items() if k != "x-api-key"}
+        retry["Authorization"] = f"Bearer {original_headers['x-api-key']}"
+        return retry
+
+    def record_auth_retry_success(self):
+        self._use_bearer = True
+
+    def build_request(self, config, messages, schema):
+        headers = {...}
+        if self._use_bearer:
+            headers["Authorization"] = f"Bearer {api_key}"
+        else:
+            headers["x-api-key"] = api_key
+        return url, headers, body
+```
+
+Both methods are called unconditionally on every `BaseJudgeBackend` instance —
+no `isinstance` or `hasattr` guard is needed. The dispatcher calls
+`auth_retry_headers` only on 401/403 and `record_auth_retry_success` only when
+the retry actually succeeded.
+
+## 9. Authoring an exporter
 
 Reach for an exporter to land a **completed run** somewhere belt
 doesn't write today (CSV, JUnit XML, vendor SaaS, Slack-friendly
@@ -392,14 +453,14 @@ the typed inputs (`results`, trial-expanded `scores`, `run_dir`,
 parsed `benchmark_card`). Signature is closed to modification
 ([principle 3](ARCHITECTURE.md#principle-3-extend-via-abstractions-never-modify-the-framework-core)).
 
-### 8.1. Register it
+### 9.1. Register it
 
 Built-in: register in `exporter/registry.py` AND declare an
 `belt.exporters` entry point in core's `pyproject.toml`. Plugin:
 entry point only. List is `belt doctor` under Exporters - this
 guide deliberately doesn't enumerate.
 
-### 8.2. Non-obvious contracts
+### 9.2. Non-obvious contracts
 
 - **Failure isolation.** `export()` raising surfaces as a one-line
   typed error and the next exporter still runs. Exit code is non-zero
@@ -419,7 +480,7 @@ guide deliberately doesn't enumerate.
   scrubs core provenance but does not inspect plugin output, so don't
   log credentials yourself.
 
-## 9. Authoring a sandbox provider
+## 10. Authoring a sandbox provider
 
 Reach for a sandbox provider when neither built-in (`host`,
 `docker`) can express the isolation model you need - Firecracker
@@ -436,7 +497,7 @@ the `belt.sandbox_providers` entry-point group; selection is via
 [CONFIGURATION.md → `SandboxProfile`](CONFIGURATION.md#3-environment-variables)
 for the per-group schema your provider receives.
 
-### 9.1. Register it
+### 10.1. Register it
 
 Built-in: register in `src/belt/runner/sandbox/registry.py`. Plugin:
 declare a `belt.sandbox_providers` entry point in `pyproject.toml`:
@@ -449,7 +510,7 @@ firecracker = "my_plugin:FirecrackerSandboxProvider"
 `belt doctor` then enumerates the provider under "Sandbox" alongside
 `host` and `docker`.
 
-### 9.2. The four method contracts
+### 10.2. The four method contracts
 
 ```python
 from belt import BaseSandboxProvider, SandboxContext, SandboxHandle
@@ -481,7 +542,7 @@ class FirecrackerSandboxProvider(BaseSandboxProvider):
         ...
 ```
 
-### 9.3. Hard contracts
+### 10.3. Hard contracts
 
 | Invariant | Why |
 |---|---|
@@ -492,7 +553,7 @@ class FirecrackerSandboxProvider(BaseSandboxProvider):
 | `wrap()` filters `env` to `ctx.agent_required_env ∪ profile.env_passthrough` | Anything else leaks secrets the scenario did not opt into into the sandbox |
 | `wrap()` returns a triple - never mutates the inputs | The spawner forwards it verbatim to `Popen`; mutating the inputs causes subtle cross-scenario state bleed |
 
-### 9.4. Test gates
+### 10.4. Test gates
 
 Two checks the framework enforces uniformly for every registered
 provider:
