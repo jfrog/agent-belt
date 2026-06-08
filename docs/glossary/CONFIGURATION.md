@@ -125,6 +125,7 @@ flag (CLI wins over env).
 | `BELT_ALLOW_INSECURE_BASE_URL` |
 | `BELT_ALLOW_FULL_ENV` |
 | `BELT_ALLOW_INPLACE` |
+| `BELT_ALLOW_VERIFY_EXEC` |
 | `BELT_ALLOW_ARBITRARY_AGENT` |
 | `BELT_ALLOW_ARBITRARY_SCORER` |
 | `BELT_ALLOW_ARBITRARY_EXPORTER` |
@@ -185,6 +186,7 @@ matching `BELT_ALLOW_*` env var) opts in for that invocation.
 | `--allow-arbitrary-exporter` | `eval`, `export` | Loading an exporter via dotted import path. | Same as above, for an exporter not yet registered as an `belt.exporters` entry point. |
 | `--allow-external-working-dir` | `eval`, `run` | Allowing a scenario's `working_dir` to resolve outside the scenarios-root path argument. | Multi-repo monorepos where scenarios deliberately reference a sibling worktree. |
 | `--allow-inplace` | `eval`, `run` | Permitting groups whose `_config.json` declares `workspace_isolation: "none"`. Default DENY: belt refuses such groups so an agent never runs without per-scenario worktree isolation by accident. The schema rejects any other value than `git-worktree` / `none` at parse time, so this gate is the *only* way isolation gets disabled. | Scenarios that deliberately edit the harness CWD (rare; usually you want `git-worktree`). |
+| `--allow-verify-exec` | `eval`, `run` | Permitting scenarios that declare a `verify` command (deterministic exec-test grading). Default DENY: belt refuses such groups at setup because `verify` runs an author-supplied command in the worktree. Requires an isolated worktree. | Code-editing scenarios that gate on the project's own test suite (e.g. `python -m pytest`). |
 
 > **Per-agent denied flags.** Each agent declares a `denied_flags()`
 > set (e.g. `--dangerously-skip-permissions` on Claude Code) that the
