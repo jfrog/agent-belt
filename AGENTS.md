@@ -178,6 +178,7 @@ command that prints the live answer.
 | Plugin architecture (agents, scorers, exporters) | [PLUGGABILITY.md](docs/glossary/PLUGGABILITY.md) |
 | Layered configuration & env vars + security toggles + trust model | [CONFIGURATION.md](docs/glossary/CONFIGURATION.md) |
 | Sandbox providers + kernel invariants, network policy | [SANDBOXING.md](docs/glossary/SANDBOXING.md) |
+| Threat model, trust boundaries, controls, residual risk | [SECURITY-MODEL.md](docs/glossary/SECURITY-MODEL.md) |
 | CLI subcommand index, workflows, progress modes | [CLI.md](docs/glossary/CLI.md) |
 | CI integration, threshold gating, agent install/auth recipes | [CI.md](docs/glossary/CI.md) |
 | On-disk artifacts, schema versioning, benchmark card | [OUTCOMES.md](docs/glossary/OUTCOMES.md) |
