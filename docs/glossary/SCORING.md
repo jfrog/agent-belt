@@ -36,6 +36,7 @@ keys that contribute to it. The on-disk `expect` shape lives in
 | `state` | `files_exist`, `files_contain`, `files_not_exist` |
 | `file_diff` | `files_modified_any`, `files_modified_exact`, `files_not_modified`, `git_diff_contains` |
 | `performance` | `max_ttfe_seconds`, `max_ttft_seconds`, `max_ttlt_seconds`, `max_total_seconds` |
+| `verify` | `Turn.verify` / `Scenario.verify` (deterministic command exit code + `output_contains`); see [SCENARIOS.md → §4.3](SCENARIOS.md#43-verify-deterministic-exec-test) |
 
 Each check produces a
 `CheckEntry(dimension, check, passed, details, turn_idx)` - full

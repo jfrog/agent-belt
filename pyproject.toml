@@ -143,16 +143,19 @@ packages = ["src/belt"]
 # fixtures, cross-agent demos, or scorer-config snippets that users don't
 # need bundled.
 #
-# The `sample-project` fixture rides along because three showcase groups
-# (editing-workspace, sandboxed, sandboxed-offline) declare
-# `working_dir: "../../../fixtures/sample-project"` in their _config.json.
-# Without it those groups raise `WorkspaceError: working_dir does not exist`
-# at scenario load time. Subpath only (220K); bundling the full
-# `examples/fixtures/` directory would pull in 38MB of bookstore-api /
-# tasktracker / urlshortener fixtures that no showcase group references.
+# Fixtures ride along only when a showcase group references them via
+# `working_dir: "../../../fixtures/<name>"`; otherwise the group raises
+# `WorkspaceError: working_dir does not exist` at scenario load time (and
+# `make verify-wheel` fails the bundled-working_dir check). `sample-project`
+# is referenced by editing-workspace / sandboxed / sandboxed-offline;
+# `tasktracker` by the `verify` showcase (it ships a real pytest suite the
+# verify exec-test grades). Both are tiny text-only subpaths. The remaining
+# `examples/fixtures/` entries (bookstore-api / folio / urlshortener) stay
+# repo-only - they are large and no showcase group references them.
 [tool.hatch.build.targets.wheel.force-include]
 "examples/scenarios/showcase" = "belt/_bundled_examples/scenarios/showcase"
 "examples/fixtures/sample-project" = "belt/_bundled_examples/fixtures/sample-project"
+"examples/fixtures/tasktracker" = "belt/_bundled_examples/fixtures/tasktracker"
 
 # The agent-skills directory at src/belt/.agents/skills/belt/ is shipped
 # automatically by the default package selection above (it lives inside the

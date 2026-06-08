@@ -270,6 +270,49 @@ class TurnJudgeOverride(BaseModel):
     skip: bool = False
 
 
+class VerifySpec(BaseModel):
+    """A deterministic verification command run in the scenario worktree.
+
+    Declared on :attr:`Turn.verify` (runs after that turn) or
+    :attr:`Scenario.verify` (runs once after the final turn). The runner
+    executes ``cmd`` in the per-scenario worktree, through the active sandbox
+    provider, and records the exit code and captured stdout into
+    :class:`belt.entities.TurnOutput` for the rule-based scorer to assert on.
+
+    Security envelope (see ``docs/glossary/SECURITY-MODEL.md``): ``cmd`` is an
+    argv list, never a shell string; the command runs only with an isolated
+    worktree and only when ``--allow-verify-exec`` (or
+    ``BELT_ALLOW_VERIFY_EXEC=1``) is set - the runner refuses the group at
+    setup otherwise (default-deny, because this executes an author-supplied
+    command). ``output_contains`` entries are plain substrings, not regex.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cmd: list[str] = Field(
+        min_length=1,
+        description="Command argv (no shell). E.g. ['python', '-m', 'pytest', '-q'].",
+    )
+    exit_code: int = Field(default=0, description="Expected process exit code (the check passes when it matches).")
+    output_contains: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Plain substrings (not regex) that must ALL appear in captured stdout.",
+    )
+    timeout: int = Field(
+        default=300,
+        gt=0,
+        description="Maximum seconds before the command is killed; a timeout fails the check.",
+    )
+
+    @field_validator("cmd")
+    @classmethod
+    def _reject_empty_argv(cls, v: list[str]) -> list[str]:
+        if not v or any((not isinstance(a, str) or a == "") for a in v):
+            raise ValueError("verify.cmd must be a non-empty list of non-empty strings (argv form, no shell).")
+        return v
+
+
 class Turn(BaseModel):
     """A single conversation turn."""
 
@@ -279,6 +322,10 @@ class Turn(BaseModel):
     flags: list[str] = Field(default_factory=list, max_length=50)
     expect: TurnExpectation = Field(default_factory=TurnExpectation)
     state_expect: StateExpectation = Field(default_factory=StateExpectation)
+    verify: Optional[VerifySpec] = Field(
+        default=None,
+        description="Deterministic command run after this turn in the worktree; asserted as the `verify` dimension.",
+    )
     # Per-turn LLM judge overrides. Keyed by judge name (matches the
     # name declared in ``--scorer-config`` YAML, or the implicit
     # ``"llm"`` judge name for single-judge runs). ``max_length=10``
@@ -328,6 +375,13 @@ class Scenario(BaseModel):
         ),
     )
     turns: list[Turn] = Field(max_length=100)
+    verify: Optional[VerifySpec] = Field(
+        default=None,
+        description=(
+            "Deterministic command run once after the final turn (end-of-conversation), "
+            "in the worktree; asserted as the `verify` dimension."
+        ),
+    )
 
     # Set by ``ScenarioLoader.load_scenario`` to the directory containing the
     # scenario JSON. Used by the LLM scorer to resolve

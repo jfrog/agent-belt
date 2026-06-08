@@ -193,6 +193,52 @@ def _check_inplace_gate(ctx: RunContext) -> None:
         ctx.progress.console.print(f"\n  [red]\u2717[/red] {mg.name}: {cause}")
 
 
+def _check_verify_gate(ctx: RunContext) -> None:
+    """Reject groups whose scenarios declare ``verify`` unless opted in and isolated.
+
+    A ``verify`` block (``Turn.verify`` or ``Scenario.verify``) runs an
+    author-supplied command in the worktree, so it is default-deny - exactly
+    like ``--allow-inplace`` and ``--allow-external-working-dir``. Two
+    conditions are enforced here, before any agent runs:
+
+    1. **Opt-in.** ``--allow-verify-exec`` (or ``BELT_ALLOW_VERIFY_EXEC=1``)
+       must be set; otherwise the group is refused with a remediation line.
+    2. **Isolated worktree.** ``verify`` only runs inside a per-scenario
+       worktree (``working_dir`` or ``fixture_repo`` with
+       ``workspace_isolation: git-worktree``); without one the command would
+       execute in the operator CWD, so the group is refused.
+
+    See ``docs/glossary/SECURITY-MODEL.md`` for the threat model.
+    """
+    allowed = bool(getattr(ctx.args, "allow_verify_exec", False)) or envvars.is_truthy(envvars.ALLOW_VERIFY_EXEC)
+    for mg in ctx.matched_groups:
+        if mg.name in ctx.failed_groups:
+            continue
+        has_verify = any(scn.verify is not None or any(t.verify is not None for t in scn.turns) for scn in mg.scenarios)
+        if not has_verify:
+            continue
+        if not allowed:
+            cause = (
+                "a scenario declares `verify` (deterministic command execution). "
+                f"Re-run with --allow-verify-exec (or set {envvars.ALLOW_VERIFY_EXEC}=1) to opt in."
+            )
+            ctx.failed_groups.add(mg.name)
+            ctx.setup_errors[mg.name] = cause
+            ctx.progress.console.print(f"\n  [red]\u2717[/red] {mg.name}: {cause}")
+            continue
+        gc = mg.config
+        has_worktree = bool(gc.working_dir or gc.fixture_repo) and gc.workspace_isolation == "git-worktree"
+        if not has_worktree:
+            cause = (
+                "`verify` requires an isolated worktree. Set working_dir (or fixture_repo) "
+                "with workspace_isolation: git-worktree so the command runs in a per-scenario "
+                "copy, not the operator's working directory."
+            )
+            ctx.failed_groups.add(mg.name)
+            ctx.setup_errors[mg.name] = cause
+            ctx.progress.console.print(f"\n  [red]\u2717[/red] {mg.name}: {cause}")
+
+
 def _prepare_group_fixtures(ctx: RunContext) -> None:
     """Clone every group's ``fixture_repo`` into a per-run cache directory.
 
@@ -338,6 +384,7 @@ def setup_groups(ctx: RunContext) -> int | None:
     """Set up agent groups in parallel. Returns exit code on fatal failure, None on success."""
     _check_external_working_dir_gate(ctx)
     _check_inplace_gate(ctx)
+    _check_verify_gate(ctx)
     _prepare_group_fixtures(ctx)
     total_groups = len(ctx.matched_groups)
     ctx.progress.console.print(f"\nSetting up [bold]{total_groups}[/bold] group(s)...", end=" ")

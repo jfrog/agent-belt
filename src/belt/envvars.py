@@ -44,6 +44,7 @@ SILENCE_CUSTOM_BASE_URL_WARNING: Final[str] = "BELT_SILENCE_CUSTOM_BASE_URL_WARN
 ALLOW_INSECURE_BASE_URL: Final[str] = "BELT_ALLOW_INSECURE_BASE_URL"
 ALLOW_EXTERNAL_WORKING_DIR: Final[str] = "BELT_ALLOW_EXTERNAL_WORKING_DIR"
 ALLOW_INPLACE: Final[str] = "BELT_ALLOW_INPLACE"
+ALLOW_VERIFY_EXEC: Final[str] = "BELT_ALLOW_VERIFY_EXEC"
 SANDBOX_PROVIDER: Final[str] = "BELT_SANDBOX_PROVIDER"
 NO_DOTENV: Final[str] = "BELT_NO_DOTENV"
 NO_UMASK: Final[str] = "BELT_NO_UMASK"
@@ -123,6 +124,7 @@ PUBLIC_ALLOW: Final[frozenset[str]] = frozenset(
         ALLOW_FULL_ENV,
         ALLOW_INPLACE,
         ALLOW_INSECURE_BASE_URL,
+        ALLOW_VERIFY_EXEC,
         ANTHROPIC_BASE_URL,
         DEBUG,
         LOG_LEVEL,
@@ -151,6 +153,7 @@ ALL_NAMES: Final[frozenset[str]] = frozenset(
         ALLOW_FULL_ENV,
         ALLOW_INPLACE,
         ALLOW_INSECURE_BASE_URL,
+        ALLOW_VERIFY_EXEC,
         ANTHROPIC_API_KEY,
         ANTHROPIC_BASE_URL,
         AZURE_CLIENT_ID,
@@ -228,6 +231,7 @@ _SECURITY_TOGGLE_FLAG_TO_ENV: Final[tuple[tuple[str, str], ...]] = (
     ("allow_arbitrary_exporter", ALLOW_ARBITRARY_EXPORTER),
     ("allow_arbitrary_scorer", ALLOW_ARBITRARY_SCORER),
     ("allow_insecure_base_url", ALLOW_INSECURE_BASE_URL),
+    ("allow_verify_exec", ALLOW_VERIFY_EXEC),
 )
 
 

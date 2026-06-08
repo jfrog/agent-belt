@@ -128,6 +128,7 @@ Minimum:
 | `flags` | No | `[]` | Extra CLI flags forwarded to `agent.execute()`. |
 | `expect` | No | `{}` | Deterministic rule-based expectations. See [§4](#4-turn-expect-and-state_expect). |
 | `state_expect` | No | `{}` | Post-turn workspace filesystem checks. See [§4.2](#42-state_expect). |
+| `verify` | No | `null` | Deterministic command run after this turn in the worktree. See [§4.3](#43-verify-deterministic-exec-test). |
 
 ## 4. Turn `expect` and `state_expect`
 
@@ -200,6 +201,34 @@ LLM judge as ground-truth evidence.
 | `files_exist` / `files_not_exist` | list[str] | `[]` | Relative paths that must / must not exist after the turn. |
 | `files_contain` | dict[str, str] | `{}` | Path → substring required in file content. |
 | `capture_git_diff` | bool | `false` | Capture `git diff` into `TurnOutput.raw_state`. |
+
+### 4.3. `verify` (deterministic exec-test)
+
+`verify` runs an author-declared command in the worktree and gates on its
+exit code - the strongest, cheapest grader for code-editing scenarios ("did
+the agent's change make the test suite pass?"). Declarable on a **turn**
+(`Turn.verify`, runs after that turn) or on the **scenario**
+(`Scenario.verify`, runs once after the final turn - the end-of-conversation
+case). Both produce checks under the `rules/verify` dimension; a skipped
+verify (command did not run) is recorded as a tri-state skip, not a failure.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `cmd` | list[str] | - | Command argv (no shell). E.g. `["python", "-m", "pytest", "-q"]`. |
+| `exit_code` | int | `0` | Expected exit code; the check passes when it matches. |
+| `output_contains` | list[str] | `[]` | Plain substrings (not regex) that must all appear in stdout. |
+| `timeout` | int | `300` | Max seconds; a timeout fails the check. |
+
+```json
+"verify": { "cmd": ["python", "-m", "pytest", "-q"], "exit_code": 0, "output_contains": ["passed"] }
+```
+
+`verify` executes an author-supplied command, so it is default-deny: it runs
+only with an isolated worktree and only when `--allow-verify-exec` (or
+`BELT_ALLOW_VERIFY_EXEC=1`) is set; otherwise the group is refused at setup.
+The command runs through the active sandbox provider (inside the container
+under `--sandbox docker`) with a minimal, credential-free environment. See
+[SECURITY-MODEL.md](SECURITY-MODEL.md#511-deterministic-verify-execution).
 
 ## 5. Multi-turn templating
 
