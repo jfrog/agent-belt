@@ -446,7 +446,10 @@ if parsed.scheme == "http" and not _is_loopback(parsed.host):
 ```
 
 The full toggle inventory lives in
-[CONFIGURATION.md → Security toggles](CONFIGURATION.md#4-behaviour-gates----allow----default-deny).
+[CONFIGURATION.md → Security toggles](CONFIGURATION.md#4-behaviour-gates----allow----default-deny),
+and the full threat model this principle defends - trust boundaries,
+control catalog, and accepted residual risk - is in
+[SECURITY-MODEL.md](SECURITY-MODEL.md).
 
 **Escape every untrusted string before it reaches a markup sink.**
 Agent stdout, judge reasoning, scenario filenames, and any other
