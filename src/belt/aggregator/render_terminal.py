@@ -22,7 +22,7 @@ from belt.constants import ERROR_PATTERNS, MAX_TURNS_PER_SCENARIO, TURN_CLI_TEMP
 from belt.entities import ScenarioScore, TurnOutput
 from belt.scorer.display import VERDICT_DISPLAY, verdict_label
 from belt.scorer.entities import DOWNGRADE_VERDICT_SET
-from belt.scorer.payloads import LLMPayload, RulesPayload
+from belt.scorer.payloads import RulesPayload, iter_llm_payloads, iter_llm_verdicts
 
 # Loguru level names at or below which the renderer should show the
 # inline judge reasoning, the response tail, and the verbose rule-by-rule
@@ -37,9 +37,9 @@ def _is_verbose() -> bool:
     return resolve_terminal_level(0) in _VERBOSE_LEVELS
 
 
-from . import dry_run_only_failure_count
-from .stats import compute_partial_score
-from .thresholds import discover_llm_dimensions
+from . import dry_run_only_failure_count  # noqa: E402
+from .stats import compute_partial_score  # noqa: E402
+from .thresholds import discover_llm_dimensions  # noqa: E402
 
 SCORE_EMOJI: dict[str, str] = {token: verdict_label(token) for token in VERDICT_DISPLAY}
 """``token → "<icon> <token>"`` table for result-panel cells. Derived
@@ -58,13 +58,26 @@ def _rules_summary(score: ScenarioScore) -> str:
 
 
 def _llm_dim(score: ScenarioScore, dim: str) -> str:
-    llm = score.scores.get("llm")
-    if not isinstance(llm, LLMPayload):
+    # Walk every LLM-shaped payload (LLMPayload + PerTurnLLMPayload +
+    # any non-default scorer name from --scorer-config) so the result
+    # cell is populated regardless of which judge produced the verdict.
+    # When multiple judges produce a verdict for the same dim, surface
+    # the worst one so a single passing vote doesn't mask a fail in the
+    # one-line panel.
+    worst: str | None = None
+    for _name, payload in iter_llm_payloads(score):
+        for d, token, _reasoning in iter_llm_verdicts(payload):
+            if d != dim:
+                continue
+            # "fail"/"low"/"inconclusive" win over higher tokens; any
+            # downgrade verdict masks any pass/high/medium.
+            if worst is None:
+                worst = token
+            elif token in DOWNGRADE_VERDICT_SET and worst not in DOWNGRADE_VERDICT_SET:
+                worst = token
+    if worst is None:
         return "-"
-    verdict = llm.dimensions.get(dim)
-    if verdict is None:
-        return "-"
-    return SCORE_EMOJI.get(verdict.score, "-")
+    return SCORE_EMOJI.get(worst, "-")
 
 
 def build_result_table(scores: list[ScenarioScore]) -> list[str]:
@@ -328,34 +341,36 @@ def print_terminal(
             # we still escape defensively so any future call site that bypasses
             # validation can't inject Rich markup into the panel.
             rules = s.scores.get("rules")
-            llm = s.scores.get("llm")
+            llm_payloads = list(iter_llm_payloads(s))
 
-            # Collapse the failed rules and downgraded LLM dims onto the same
-            # line as the scenario name. The pre-compaction layout printed
-            # scenario / rule / llm on three lines each (six lines for two
-            # failed scenarios) which dominated the terminal surface for
-            # what is, semantically, two facts per scenario.
             line_parts: list[str] = []
             failed_rules: list[str] = []
             if isinstance(rules, RulesPayload):
                 for c in rules.checks:
                     if c.passed is False:
-                        # Rule details may quote agent stdout - always escape.
                         detail = f" ({rich_safe(c.details)})" if c.details else ""
                         failed_rules.append(f"{rich_safe(c.dimension)}/{rich_safe(c.check)}{detail}")
 
-            llm_downgraded: list[str] = []
-            if isinstance(llm, LLMPayload):
-                llm_downgraded = sorted(
-                    f"{dim}={llm.dimensions[dim].score}"
-                    for dim in llm.dimensions
-                    if llm.dimensions[dim].score in DOWNGRADE_VERDICT_SET
+            # Collect every downgrade verdict from every LLM-shaped
+            # payload (multi-judge: judge_a + judge_b; per-turn: rolled
+            # up). Per-judge prefix surfaces *which* judge produced the
+            # downgrade so a reviewer doesn't have to open ``belt view``
+            # to attribute it.
+            llm_downgraded_per_payload: list[tuple[str, list[str]]] = []
+            for name, payload in llm_payloads:
+                rows = sorted(
+                    f"{dim}={score_token}"
+                    for dim, score_token, _r in iter_llm_verdicts(payload)
+                    if score_token in DOWNGRADE_VERDICT_SET
                 )
+                if rows:
+                    llm_downgraded_per_payload.append((name, rows))
 
             if failed_rules:
                 line_parts.append(f"[dim]rule:[/dim] {'; '.join(failed_rules)}")
-            if llm_downgraded:
-                line_parts.append(f"[dim]llm:[/dim] {', '.join(rich_safe(x) for x in llm_downgraded)}")
+            for name, rows in llm_downgraded_per_payload:
+                label = "llm" if name == "llm" else f"llm[{rich_safe(name)}]"
+                line_parts.append(f"[dim]{label}:[/dim] {', '.join(rich_safe(x) for x in rows)}")
 
             scenario_label = rich_safe(s.scenario_name)
             if line_parts:
@@ -363,22 +378,22 @@ def print_terminal(
             else:
                 con.print(f"    {i}. {scenario_label}")
 
-            # Verbose-only: judge reasoning prose, one paragraph per failed
-            # dimension. Heaviest single contributor to terminal noise on a
-            # failing run; one ``belt view`` away in ``score.json`` otherwise.
-            if verbose and isinstance(llm, LLMPayload):
-                for dim in sorted(llm.dimensions):
-                    verdict = llm.dimensions[dim]
-                    if verdict.score in DOWNGRADE_VERDICT_SET:
-                        con.print(
-                            f"       [dim]llm {rich_safe(dim)} ({rich_safe(verdict.score)}):[/dim] "
-                            f"{rich_safe(verdict.reasoning)}"
-                        )
+            if verbose:
+                for name, payload in llm_payloads:
+                    prefix = "llm" if name == "llm" else f"llm[{rich_safe(name)}]"
+                    for dim, score_token, reasoning in iter_llm_verdicts(payload):
+                        if score_token in DOWNGRADE_VERDICT_SET:
+                            con.print(
+                                f"       [dim]{prefix} {rich_safe(dim)} ({rich_safe(score_token)}):[/dim] "
+                                f"{rich_safe(reasoning)}"
+                            )
 
-            if isinstance(llm, LLMPayload) and llm.consensus_meta and llm.consensus_meta.disagreements:
-                disagreements = llm.consensus_meta.disagreements
-                dims = ", ".join(rich_safe(d.get("dimension", "")) for d in disagreements if isinstance(d, dict))
-                con.print(f"       [dim]consensus:[/dim] {len(disagreements)} disagreement(s) [{dims}]")
+            for name, payload in llm_payloads:
+                cm = getattr(payload, "consensus_meta", None)
+                if cm and cm.disagreements:
+                    dims = ", ".join(rich_safe(d.get("dimension", "")) for d in cm.disagreements if isinstance(d, dict))
+                    label = "consensus" if name == "llm" else f"consensus[{rich_safe(name)}]"
+                    con.print(f"       [dim]{label}:[/dim] {len(cm.disagreements)} disagreement(s) [{dims}]")
 
             if outcomes_root is not None:
                 outcome_dir = outcomes_root / s.group / s.scenario_name

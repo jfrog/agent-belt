@@ -199,8 +199,17 @@ belt score                              # latest run, defaults
 belt score --run-dir outcomes/<id>      # specific run
 belt score --modes llm --scorer-arg model=anthropic/claude-sonnet-4-5
 belt score --scorer-config judges.yaml  # multi-judge
+belt score --scorer-config per-turn.yaml --dry-run    # preview per-turn judge prompt(s)
 belt score --dry-run                    # preview judge prompt for the first scenario
 ```
+
+When `--scorer-config` declares one or more judges with
+`resolution: turn`, `--dry-run` renders a separate block per turn
+showing the per-turn system message, dynamic message, and schema -
+so an author can verify per-turn overrides (instruction,
+dimensions, evidence slice) without paying for a real run. See
+[SCORING.md → §2.10](SCORING.md#210-per-turn-llm-judging) for the
+per-turn feature.
 
 ### 4.6. Re-exporting without re-aggregating
 

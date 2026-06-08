@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from belt.entities import ScenarioScore
 from belt.scorer.entities import ALL_VERDICT_TOKENS, DEFAULT_FAIL_LEVELS
-from belt.scorer.payloads import LLMPayload, RulesPayload
+from belt.scorer.payloads import RulesPayload, iter_llm_payloads, iter_llm_verdicts
 
 VALID_LLM_FAIL_ON: set[str] = set(ALL_VERDICT_TOKENS)
 """Tokens accepted by ``--llm-fail-on``. Derived from
@@ -73,12 +73,18 @@ def validate_thresholds(
 
 
 def discover_llm_dimensions(scores: list[ScenarioScore]) -> list[str]:
-    """Discover LLM dimension names from actual score data."""
+    """Discover LLM dimension names from actual score data.
+
+    Walks every LLM-shaped payload (``LLMPayload`` and
+    ``PerTurnLLMPayload``, including non-default scorer names from
+    ``--scorer-config``) so a per-turn judge or a renamed multi-judge
+    setup contributes its dimensions to threshold validation.
+    """
     dims: set[str] = set()
     for s in scores:
-        llm = s.scores.get("llm")
-        if isinstance(llm, LLMPayload):
-            dims.update(llm.dimensions.keys())
+        for _name, payload in iter_llm_payloads(s):
+            for dim, _score_token, _reasoning in iter_llm_verdicts(payload):
+                dims.add(dim)
     return sorted(dims)
 
 
@@ -146,20 +152,33 @@ class ThresholdEnforcer:
         return result
 
     def _count_llm_failures(self) -> dict[str, tuple[int, int]]:
+        # Walk every LLM-shaped payload per scenario so multi-judge
+        # (judge_a / judge_b) and per-turn (PerTurnLLMPayload) verdicts
+        # all contribute to threshold gating. ``iter_llm_verdicts``
+        # applies the per-turn worst-of-turns rollup so a single
+        # failing turn marks the whole scenario as failing the dim.
         dimensions = discover_llm_dimensions(self._scores)
         result: dict[str, tuple[int, int]] = {}
         for dim in dimensions:
             total = 0
             failed = 0
             for s in self._scores:
-                llm = s.scores.get("llm")
-                if not isinstance(llm, LLMPayload):
-                    continue
-                verdict = llm.dimensions.get(dim)
-                if verdict is None:
+                verdict_for_dim: str | None = None
+                for _name, payload in iter_llm_payloads(s):
+                    for d, score_token, _reasoning in iter_llm_verdicts(payload):
+                        if d != dim:
+                            continue
+                        # Take the worst verdict across all judges /
+                        # turns for this scenario+dim so one passing
+                        # judge cannot mask a failing one.
+                        if verdict_for_dim is None or (
+                            score_token in self._llm_fail_on and verdict_for_dim not in self._llm_fail_on
+                        ):
+                            verdict_for_dim = score_token
+                if verdict_for_dim is None:
                     continue
                 total += 1
-                if verdict.score in self._llm_fail_on:
+                if verdict_for_dim in self._llm_fail_on:
                     failed += 1
             if total > 0:
                 result[dim] = (failed, total)

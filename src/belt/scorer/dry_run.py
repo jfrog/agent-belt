@@ -105,7 +105,17 @@ def handle_dry_run(
         for judge in judges:
             effective = judge
             if strategy is not None:
-                effective = LLMScorer(judge.config, judge.max_retries, strategy=strategy)
+                # Preserve per-judge resolution / evidence_scope on
+                # rebuild so the dry-run preview matches what the live
+                # scorer would actually send (per-turn vs scenario).
+                effective = LLMScorer(
+                    judge.config,
+                    judge.max_retries,
+                    strategy=strategy,
+                    skip_availability=True,
+                    resolution=judge.resolution,
+                    evidence_scope=judge.evidence_scope,
+                )
                 effective.judge_name = judge.judge_name
             _print_llm_preview(effective, scenario, turn_outputs, sep)
 
@@ -152,7 +162,13 @@ def _print_llm_preview(
     turn_outputs: list[TurnOutput],
     sep: str,
 ) -> None:
-    """Print the exact LLM payload that would be sent."""
+    """Print the exact LLM payload that would be sent.
+
+    For ``resolution="turn"`` the preview prints one block per turn so
+    the user can inspect every per-turn rubric (and per-turn override
+    application) before any judge call. ``cumulative`` evidence_scope
+    surfaces the rolling turn window the model would see.
+    """
     payload = llm_scorer.dry_run(scenario, turn_outputs)
     suffix = f"  (judge: {llm_scorer.judge_name})" if llm_scorer.judge_name != "llm" else ""
     eprint(f"\n  Mode: llm{suffix}")
@@ -161,6 +177,40 @@ def _print_llm_preview(
     eprint(f"  Temperature: {payload['temperature']}")
     eprint(f"  Seed:        {payload['seed']}")
     eprint(f"  Max tokens:  {payload['max_tokens']}")
+    # Resolution / evidence_scope are per-turn-judging metadata. They
+    # only appear when the judge opted into ``resolution: turn`` so the
+    # standard scenario-level preview stays byte-identical to the
+    # pre-feature output.
+    if payload.get("resolution") and payload["resolution"] != "scenario":
+        eprint(f"  Resolution:  {payload['resolution']}")
+    if payload.get("evidence_scope") and payload["evidence_scope"] != "isolated":
+        eprint(f"  Evidence:    {payload['evidence_scope']}")
+
+    if payload.get("resolution") == "turn":
+        for entry in payload.get("turns", []):
+            turn_idx = entry["turn_idx"]
+            eprint(f"\n{sep}")
+            eprint(f"  TURN {turn_idx}:")
+            eprint(sep)
+            if entry.get("skipped"):
+                eprint("  (skipped by per-turn override - no judge call would happen)")
+                continue
+            eprint(f"  Dimensions:  {', '.join(entry['dimensions'])}")
+            eprint(f"\n{sep}")
+            eprint(f"  TURN {turn_idx} SYSTEM MESSAGE:")
+            eprint(sep)
+            eprint(entry["system_message"])
+            eprint(f"\n{sep}")
+            eprint(f"  TURN {turn_idx} DYNAMIC MESSAGE (truncated to 2000 chars):")
+            eprint(sep)
+            dynamic = entry["dynamic_message"]
+            eprint(dynamic[:2000] + ("..." if len(dynamic) > 2000 else ""))
+            eprint(f"\n{sep}")
+            eprint(f"  TURN {turn_idx} SCHEMA:")
+            eprint(sep)
+            eprint(json.dumps(entry["schema"], indent=2))
+        return
+
     eprint(f"  Dimensions:  {', '.join(payload['dimensions'])}")
     eprint(f"\n{sep}")
     eprint("  SYSTEM MESSAGE:")

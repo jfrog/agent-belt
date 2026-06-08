@@ -66,14 +66,101 @@ under `scores`:
 
 The inner `schema_version` is the discriminator for the typed payload
 contract defined in `belt.scorer.payloads`. Built-in shapes are
-`rules.v1` and `llm.v1`; the LLM payload carries per-dimension
-verdicts on either the ternary (`high`/`medium`/`low`) or binary
-(`pass`/`fail`) scale, optionally extended with `inconclusive` - see
+`rules.v1`, `llm.v1`, and `per_turn_llm.v1`; the LLM payload carries
+per-dimension verdicts on either the ternary (`high`/`medium`/`low`)
+or binary (`pass`/`fail`) scale, optionally extended with
+`inconclusive` - see
 [SCORING.md → §2.5](SCORING.md#25-verdict-scales-binary--ternary--inconclusive).
 Third-party scorers register their own shapes (see
 [PLUGGABILITY.md → Authoring a scorer](PLUGGABILITY.md#7-authoring-a-scorer)).
 Missing or unregistered `schema_version` raises a `ValueError` at parse
 time - the framework never guesses at unknown shapes.
+
+#### 2.1.1. `per_turn_llm.v1` (per-turn LLM judging)
+
+For per-turn judges (`resolution: turn` in `--scorer-config`)
+`score.json` writes a `per_turn_llm.v1` payload alongside or
+instead of `llm.v1`:
+
+```jsonc
+{
+  "schema_version": "per_turn_llm.v1",
+  "overall_pass": false,
+  "turns": [
+    {
+      "turn_idx": 0,
+      "dimensions": {
+        "stepped_correctly": { "score": "high", "reasoning": "tool reached with arg" }
+      },
+      "judge_errored": false
+    },
+    {
+      "turn_idx": 1,
+      "dimensions": {
+        "stepped_correctly": { "score": "low",  "reasoning": "did not recover" }
+      },
+      "judge_errored": false
+    }
+  ]
+}
+```
+
+Consumers must use `iter_llm_payloads(score)` /
+`iter_llm_verdicts(payload)` to walk both `llm.v1` and
+`per_turn_llm.v1` uniformly; the iterator applies worst-of-turns
+rollup so dimension cells stay aligned with the scenario-level
+shape. Per-turn detail surfaces in the CSV `.per_turn` sidecar
+(see [§2.2](#22-csv-per-turn-sidecar) below), JUnit failure body,
+markdown `<details>` block, and `belt view` drill-down.
+
+### 2.2. CSV per-turn sidecar
+
+When at least one scenario in a run carries a `per_turn_llm.v1`
+payload, the CSV exporter writes a sidecar alongside the main file
+at `<output>.per_turn<ext>` (e.g. `results.csv` →
+`results.per_turn.csv`, `results.tsv` →
+`results.per_turn.tsv`). Columns:
+
+| Column | Notes |
+|---|---|
+| `group`, `scenario` | Scenario identity. |
+| `scorer_key` | The per-judge name from `--scorer-config`. |
+| `turn_idx` | 0-based turn index. |
+| `dimension` | Per-turn dimension name. |
+| `score` | One of `high` / `medium` / `low` / `pass` / `fail` / `inconclusive`. |
+| `reasoning` | Judge reasoning for this `(turn, dim)`. Cells flow through `csv_safe` (OWASP formula-injection guard). |
+| `judge_errored` | `"true"` when the per-turn cell errored (rate-limited, timeout, etc.). |
+
+The sidecar inherits the same trust boundary as the user-supplied
+`output` path - no new path-traversal surface. Sidecar is **not**
+emitted for scenario-level-only runs, so a pure `llm.v1` eval
+keeps the original single-file output unchanged.
+
+### 2.3. `stats["scorers"]` in `results.json`
+
+`results.json` indexes per-dimension histograms by scorer key under
+a single `stats["scorers"]` block. `"rules"` carries the rule-based
+scorer's per-dimension pass-rates; every LLM scorer (`"llm"` for
+the consensus/single-judge path; the user-declared judge names for
+multi-judge non-consensus; any third-party scorer key) carries the
+verdict histogram with buckets `high` / `medium` / `low` / `pass` /
+`fail` / `inconclusive` / `total`.
+
+```json
+{
+  "pass_rate": 0.67,
+  "scorers": {
+    "rules": {"correctness": {"passed": 2, "failed": 1, "total": 3, "pass_rate": 0.67}},
+    "primary_judge": {"correctness": {"high": 2, "low": 1, "total": 3, ...}},
+    "adversarial_judge": {"correctness": {"high": 1, "low": 2, "total": 3, ...}}
+  }
+}
+```
+
+Consumers walk payloads through `iter_llm_payloads` /
+`iter_dimension_feedback` (see [PLUGGABILITY.md §7.2](PLUGGABILITY.md))
+rather than hard-coding scorer names, so a new judge key surfaces
+without code changes.
 
 When the LLM judge backend fails for infrastructure reasons (rate-limit,
 timeout, network, parse failure), `score.json` writes a non-verdict

@@ -17,11 +17,40 @@ in ``belt.entities`` because they are consumed by the aggregator.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from belt.scorer.payloads import ScorerPayload
+
+Resolution = Literal["scenario", "turn"]
+"""Granularity at which an LLM scorer judges a scenario.
+
+* ``"scenario"`` (default, today's behaviour) - one judge call per
+  scenario over all turns concatenated.
+* ``"turn"`` - one judge call per turn, each turn graded against the
+  judge's rubric (optionally overridden per turn by
+  :class:`belt.scenario.TurnJudgeOverride`).
+
+Single source of truth for the literal pair; ``--scorer-config`` YAML
+(``belt.scorer.config_schema.JudgeDef.resolution``) and runtime
+plumbing (``belt.scorer.llm.scorer.LLMScorer.__init__``) both read
+this alias so the option set stays in lockstep with the runtime
+dispatch (Design Principle 9)."""
+
+EvidenceScope = Literal["isolated", "cumulative"]
+"""How much prior-turn context a per-turn judge call sees.
+
+* ``"isolated"`` (default, most conservative) - the judge sees only the
+  ``### Turn N`` block being graded, with no leak from earlier turns.
+  Avoids cross-turn contamination of the verdict.
+* ``"cumulative"`` - the judge sees turns ``[0..N]``. Useful when a
+  later turn's quality depends on prior context (e.g. judging error
+  recovery in turn 2 requires seeing the failing turn 1 transcript).
+
+Ignored for ``resolution="scenario"``: scenario-level judges always
+see every turn at once.
+"""
 
 
 class ScoreLevel(str, Enum):

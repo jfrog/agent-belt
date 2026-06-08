@@ -210,37 +210,59 @@ def collect_runtime_info_sidecars(run_dir: Path) -> list[AgentProvenance]:
 def collect_judges(run_dir: Path) -> list[JudgeProvenance]:
     """Discover unique LLM judge backends used across all scored scenarios.
 
-    Read from ``score.json`` files produced by the scorer. Backends are
+    Walks every LLM-shaped payload under ``score.json`` (the default
+    ``"llm"`` key, any user-declared judge key from a multi-judge
+    ``--scorer-config``, and any per-turn ``per_turn_llm.v1`` payload),
     keyed by ``(provider, model, base_url)`` so a run that mixes a
-    primary judge with an OpenAI-compatible secondary surfaces both.
-    ``base_url`` is recorded as the scorer left it; when it's a real
-    URL the scorer is expected to have already redacted it via
-    :mod:`belt._redact`.
+    primary judge with a secondary surfaces both. ``base_url`` is
+    recorded as the scorer left it; when it's a real URL the scorer
+    is expected to have already redacted it via :mod:`belt._redact`.
     """
     seen: dict[tuple[str, str, str], JudgeProvenance] = {}
     for score_path in run_dir.rglob(SCORE_FILE):
         data = read_json(score_path)
         if not data:
             continue
-        llm = (data.get("scores") or {}).get("llm") or {}
-        usage = llm.get("usage") or {}
-        backends = usage.get("backends") if isinstance(usage, dict) else None
-        if not isinstance(backends, list):
-            continue
-        for b in backends:
-            if not isinstance(b, dict):
+        for _name, payload in _iter_llm_shaped_payloads(data):
+            usage = payload.get("usage") or {}
+            backends = usage.get("backends") if isinstance(usage, dict) else None
+            if not isinstance(backends, list):
                 continue
-            key = (
-                str(b.get("provider", "")),
-                str(b.get("model", "")),
-                str(b.get("base_url", "")),
-            )
-            if key in seen:
-                continue
-            seen[key] = JudgeProvenance(
-                provider=key[0] or "unknown",
-                model=key[1] or "unknown",
-                base_url=key[2] or None,
-                dimensions=sorted(d for d in (llm.get("dimensions") or []) if isinstance(d, str)),
-            )
+            dimensions = sorted(d for d in (payload.get("dimensions") or []) if isinstance(d, str))
+            for b in backends:
+                if not isinstance(b, dict):
+                    continue
+                key = (
+                    str(b.get("provider", "")),
+                    str(b.get("model", "")),
+                    str(b.get("base_url", "")),
+                )
+                if key in seen:
+                    continue
+                seen[key] = JudgeProvenance(
+                    provider=key[0] or "unknown",
+                    model=key[1] or "unknown",
+                    base_url=key[2] or None,
+                    dimensions=dimensions,
+                )
     return list(seen.values())
+
+
+def _iter_llm_shaped_payloads(score_data: dict[str, Any]) -> Any:
+    """Yield ``(scorer_name, payload_dict)`` for every LLM-shaped score block.
+
+    Operates on the raw JSON dict (not the Pydantic model) because the
+    benchmark-card collector runs against on-disk ``score.json`` files
+    written by the scorer. A payload counts as LLM-shaped when its
+    ``schema_version`` starts with ``llm.`` or ``per_turn_llm.``
+    (matching the registered shapes in :mod:`belt.scorer.payloads`).
+    """
+    scores = score_data.get("scores") or {}
+    if not isinstance(scores, dict):
+        return
+    for name, payload in scores.items():
+        if not isinstance(payload, dict):
+            continue
+        schema = payload.get("schema_version", "")
+        if isinstance(schema, str) and (schema.startswith("llm.") or schema.startswith("per_turn_llm.")):
+            yield name, payload

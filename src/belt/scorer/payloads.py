@@ -164,7 +164,69 @@ class LLMPayload(BaseModel):
     consensus_meta: Optional[ConsensusMeta] = None
     individual_verdicts: Optional[dict[str, Any]] = None
     judge_errored: bool = False
-    judge_error_type: Optional[Literal["rate_limited", "timeout", "auth_failed", "other"]] = None
+    judge_error_type: Optional[Literal["rate_limited", "timeout", "auth_failed", "other", "all_turns_skipped"]] = None
+
+    model_config = {"extra": "allow"}
+
+
+class TurnVerdict(BaseModel):
+    """One per-turn LLM verdict inside a :class:`PerTurnLLMPayload`.
+
+    Field shape mirrors :class:`LLMPayload` so consumers walking turns
+    via the registered iterator see uniform per-dimension rows. The
+    ``judge_errored`` flag is per-turn: a single turn may have errored
+    (rate-limited, timeout) without invalidating the verdicts produced
+    by sibling turns. The payload-level :attr:`PerTurnLLMPayload.judge_errored`
+    is the OR of every turn's flag.
+    """
+
+    turn_idx: int
+    dimensions: dict[str, LLMDimensionVerdict] = Field(default_factory=dict)
+    usage: Optional[UsageStats] = None
+    judge_errored: bool = False
+    judge_error_type: Optional[Literal["rate_limited", "timeout", "auth_failed", "other", "all_turns_skipped"]] = None
+
+    model_config = {"extra": "allow"}
+
+
+class PerTurnLLMPayload(BaseModel):
+    """On-disk shape of a *per-turn* LLM-judge scorer's contribution to ``scores``.
+
+    A judge configured with ``resolution="turn"`` produces one
+    :class:`TurnVerdict` per scenario turn (see
+    :class:`belt.scorer.llm.scorer.LLMScorer._score_per_turn`).
+    Payload-level fields aggregate across turns so callers that only
+    care about scenario-level signal (``judge_errored``, ``usage``,
+    ``overall_pass``) read uniformly between scenario- and per-turn
+    payloads.
+
+    Per-turn iteration via the registered payload iterator
+    (:func:`_iter_per_turn_llm`) emits one :class:`DimensionFeedback`
+    per ``(scorer, dimension)`` using worst-of-turns rollup so the
+    aggregator's existing per-dimension code path keeps working with no
+    public API change to :class:`DimensionFeedback`. The per-turn
+    detail is preserved verbatim in the iterator row's ``raw["per_turn"]``
+    for consumers that need it (per-turn detail in JUnit failure
+    bodies, CSV sidecar, markdown drill-down, ``belt view``).
+
+    ``overall_pass`` is the AND across turns AND dimensions, with an
+    explicit ``any(t.dimensions ...)`` guard so an all-skipped scenario
+    (every turn carries ``skip:true`` for this judge) cannot vacuously
+    pass via ``all([])``. The runtime ``all_skipped`` taint rule in
+    ``LLMScorer._score_per_turn`` AND the preflight check in
+    ``validate_per_turn_judges_against_scenarios`` are belt-and-braces:
+    preflight catches the static case, the taint rule catches the
+    dynamic edge case (e.g. mixed skip-and-error across turns).
+    """
+
+    schema_version: Literal["per_turn_llm.v1"] = "per_turn_llm.v1"
+    overall_pass: bool
+    turns: list[TurnVerdict] = Field(default_factory=list)
+    usage: Optional[UsageStats] = None
+    consensus_meta: Optional[ConsensusMeta] = None
+    individual_verdicts: Optional[dict[str, Any]] = None
+    judge_errored: bool = False
+    judge_error_type: Optional[Literal["rate_limited", "timeout", "auth_failed", "other", "all_turns_skipped"]] = None
 
     model_config = {"extra": "allow"}
 
@@ -178,9 +240,9 @@ class DimensionFeedback(BaseModel):
     """One row's worth of "scorer X scored dimension Y" feedback.
 
     Yielded by :func:`iter_dimension_feedback` regardless of the
-    underlying payload shape. Consumers (LangSmith plugin, markdown /
-    csv / junit exporters, terminal renderer) iterate this stream
-    instead of forking on scorer name + payload shape.
+    underlying payload shape. Consumers (markdown / csv / junit
+    exporters, terminal renderer) iterate this stream instead of
+    forking on scorer name + payload shape.
 
     ``score`` is normalised to the ``0.0 - 1.0`` range or ``None``
     when no numeric score is available (e.g. a rules dimension whose
@@ -350,8 +412,8 @@ def _iter_rules(scorer_name: str, payload: BaseModel) -> Iterator[DimensionFeedb
     check. Group those by dimension, score as
     ``passed_count / runnable_count`` (skipped checks excluded from
     the denominator), and surface the failing-check details in the
-    ``comment`` so the LangSmith / markdown right-hand pane shows what
-    went wrong without expanding ``raw``.
+    ``comment`` so the markdown report shows what went wrong without
+    expanding ``raw``.
     """
     assert isinstance(payload, RulesPayload)
     by_dim: dict[str, list[CheckEntry]] = {}
@@ -412,11 +474,84 @@ def _iter_llm(scorer_name: str, payload: BaseModel) -> Iterator[DimensionFeedbac
         )
 
 
+# Worst-of-turns rank: used by :func:`_iter_per_turn_llm` to pick the
+# per-dimension cell that represents the scenario in cross-judge / cross-
+# threshold rollups. Lower rank = worse verdict; ``inconclusive`` ranks
+# below every real verdict so a single inconclusive turn pulls the rollup
+# down (mirrors :data:`belt.scorer.llm.consensus._LEVEL_RANK` exactly).
+_WORST_OF_TURNS_RANK: dict[str, int] = {
+    "inconclusive": -1,
+    "fail": 0,
+    "low": 0,
+    "medium": 1,
+    "high": 2,
+    "pass": 2,
+}
+
+
+def _iter_per_turn_llm(scorer_name: str, payload: BaseModel) -> Iterator[DimensionFeedback]:
+    """One :class:`DimensionFeedback` per dimension across all turns.
+
+    Per-turn judging produces ``T × D`` raw cells (T turns × D
+    dimensions). The aggregator's existing per-dimension code path
+    expects one row per ``(scorer, dimension)``; we collapse the T-axis
+    via *worst-of-turns rollup*:
+
+    - ``score`` = worst-ranked turn's numeric score (via
+      :func:`level_to_score`).
+    - ``comment`` = the worst turn's reasoning prefixed ``[turn N]`` so
+      a reader sees which turn dragged the cell down.
+    - ``raw["per_turn"]`` = every :class:`TurnVerdict` for this dimension
+      in turn order, so consumers that need the full per-turn breakdown
+      (CSV sidecar, JUnit failure body, ``belt view``) can read it
+      without re-walking the payload.
+
+    Turns with no entry for a dimension (e.g. ``skip:true`` or a
+    judge-errored turn) are excluded from the rollup but still surface
+    in ``raw["per_turn"]`` so the consumer can distinguish "no verdict"
+    from "low verdict".
+    """
+    assert isinstance(payload, PerTurnLLMPayload)
+    # Collect, per dimension, the list of (turn_idx, LLMDimensionVerdict)
+    # pairs for turns that actually voted. Dimensions can shift per turn
+    # (per-turn override may declare distinct dimensions), so we take the
+    # union across turns.
+    by_dim: dict[str, list[tuple[int, LLMDimensionVerdict]]] = {}
+    full_per_turn: dict[str, list[dict[str, Any]]] = {}
+    for turn in payload.turns:
+        for dim_name, verdict in turn.dimensions.items():
+            by_dim.setdefault(dim_name, []).append((turn.turn_idx, verdict))
+            full_per_turn.setdefault(dim_name, []).append(
+                {"turn_idx": turn.turn_idx, **verdict.model_dump(mode="json")}
+            )
+    for dim_name in sorted(by_dim):
+        entries = by_dim[dim_name]
+        # Worst-of-turns: pick the entry whose rank is lowest. Ties
+        # broken by lowest turn_idx so the rollup is deterministic.
+        worst_idx, worst_verdict = min(
+            entries,
+            key=lambda e: (_WORST_OF_TURNS_RANK.get(e[1].score, -1), e[0]),
+        )
+        comment = f"[turn {worst_idx}] {worst_verdict.reasoning}" if worst_verdict.reasoning else f"[turn {worst_idx}]"
+        yield DimensionFeedback(
+            scorer_name=scorer_name,
+            dimension=dim_name,
+            score=level_to_score(worst_verdict.score),
+            comment=comment,
+            raw={
+                "worst_turn_idx": worst_idx,
+                "worst_score": worst_verdict.score,
+                "per_turn": sorted(full_per_turn[dim_name], key=lambda e: e["turn_idx"]),
+            },
+        )
+
+
 # Built-ins registered eagerly so importing this module is sufficient.
 # Version strings are read off the payload classes themselves -
 # ``Literal[...]`` is the only place a string literal lives.
 register_payload_type(RulesPayload, _iter_rules)
 register_payload_type(LLMPayload, _iter_llm)
+register_payload_type(PerTurnLLMPayload, _iter_per_turn_llm)
 
 
 # -----------------------------------------------------------------------------
@@ -487,6 +622,53 @@ def _iter_payload(scorer_name: str, payload: Any) -> Iterator[DimensionFeedback]
     yield from iterator(scorer_name, payload_cls.model_validate(payload))
 
 
+def iter_llm_payloads(score: Any) -> Iterator[tuple[str, BaseModel]]:
+    """Yield ``(scorer_name, payload)`` entries whose payload is LLM-shaped.
+
+    A keyed lookup like ``score.scores.get("llm")`` misses every per-
+    judge payload (multi-judge non-consensus declares its own scorer
+    keys) and every per-turn payload. Walking via this helper handles
+    all LLM-shaped payloads uniformly:
+
+    - :class:`LLMPayload` (scenario-level, single judge or consensus)
+    - :class:`PerTurnLLMPayload` (per-turn judging)
+    - any plugin-registered subclass of either above
+
+    Order matches dict-insertion (the scorer pipeline writes them in
+    config order).
+    """
+    for scorer_name, payload in score.scores.items():
+        if isinstance(payload, (LLMPayload, PerTurnLLMPayload)):
+            yield scorer_name, payload
+
+
+def iter_llm_verdicts(payload: BaseModel) -> Iterator[tuple[str, str, str]]:
+    """Yield ``(dimension, score_token, reasoning)`` from any LLM-shaped payload.
+
+    For :class:`PerTurnLLMPayload` the worst-of-turns rollup is applied
+    (via :func:`_iter_per_turn_llm`) so the caller sees one row per
+    dimension regardless of resolution. The ``reasoning`` for a per-
+    turn row is prefixed ``[turn N]`` so a downstream renderer
+    surfaces which turn dragged the rollup down.
+
+    Order: dimensions sorted alphabetically (same as
+    :func:`_iter_llm`, :func:`_iter_per_turn_llm`).
+    """
+    if isinstance(payload, LLMPayload):
+        for dim in sorted(payload.dimensions):
+            v = payload.dimensions[dim]
+            yield dim, v.score, v.reasoning
+        return
+    if isinstance(payload, PerTurnLLMPayload):
+        for fb in _iter_per_turn_llm("__rollup__", payload):
+            raw = fb.raw or {}
+            yield fb.dimension, str(raw.get("worst_score", "")), fb.comment
+        return
+    raise TypeError(
+        f"iter_llm_verdicts: unsupported payload {type(payload).__name__}; " "expected LLMPayload or PerTurnLLMPayload"
+    )
+
+
 __all__ = [
     "CheckEntry",
     "ConsensusMeta",
@@ -494,10 +676,14 @@ __all__ = [
     "LLMDimensionVerdict",
     "LLMPayload",
     "PayloadIterator",
+    "PerTurnLLMPayload",
     "RulesPayload",
     "ScorerPayload",
+    "TurnVerdict",
     "UsageStats",
     "iter_dimension_feedback",
+    "iter_llm_payloads",
+    "iter_llm_verdicts",
     "level_to_score",
     "register_payload_type",
     "registered_payload_types",

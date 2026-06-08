@@ -58,6 +58,10 @@ def _stub_judge(name: str, result: ScorerResult, dim_names: list[str] | None = N
     judge.strategy.dimension_names = dim_names or ["q"]
     judge.is_available.return_value = True
     judge.on_event = None
+    # Resolution is read by ConsensusScorer.__init__ to enforce uniform
+    # resolution across sub-judges.
+    judge.resolution = "scenario"
+    judge.evidence_scope = "isolated"
     return judge
 
 

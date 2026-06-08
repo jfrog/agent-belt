@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import backoff
@@ -24,13 +25,14 @@ from loguru import logger
 from belt.agent.scoring import ScoringStrategy, default_scoring_strategy
 from belt.entities import ToolCall, TurnOutput
 from belt.errors import JudgeInfraError, ScorerError
-from belt.scenario import Scenario
+from belt.scenario import Scenario, TurnJudgeOverride
 from belt.scorer.base import BaseScorer
-from belt.scorer.entities import DEFAULT_FAIL_LEVELS, JudgeConfig, JudgeVerdict, ScorerResult
+from belt.scorer.entities import DEFAULT_FAIL_LEVELS, EvidenceScope, JudgeConfig, JudgeVerdict, Resolution, ScorerResult
 from belt.scorer.llm.backend import AnthropicBackend, BaseJudgeBackend, OllamaBackend, resolve_backend
 from belt.scorer.llm.cache import ScoreCache
 from belt.scorer.llm.events import ScoreEvent
-from belt.scorer.payloads import LLMDimensionVerdict, LLMPayload, UsageStats
+from belt.scorer.payloads import LLMDimensionVerdict, LLMPayload, PerTurnLLMPayload, TurnVerdict, UsageStats
+from belt.scorer.scenario_map import parse_dimension_defs
 
 DEFAULT_LLM_MAX_RETRIES = 5
 
@@ -161,28 +163,29 @@ def _render_structured_turn(idx: int, to: TurnOutput) -> str:
     return "\n".join(parts)
 
 
-def _render_evidence_files(scenario: Scenario) -> str:
-    """Read ``scenario.llm_scorer_evidence_files`` and render them for the judge prompt.
+def _render_evidence_files_from(source_dir: Path | None, paths: list[str]) -> str:
+    """Read evidence files from *source_dir* and render them for the judge prompt.
 
-    Each entry is resolved relative to the scenario JSON's directory
-    (``Scenario._source_dir``). Paths that escape that directory or do not
-    exist raise :class:`ScorerError` with the offending path - never a silent
-    skip, since the judge would then score against a partial rubric without
-    anyone noticing.
+    Per-turn judging needs to render an override list of evidence files
+    that may differ from ``scenario.llm_scorer_evidence_files``; this
+    helper is the shared body. Both the scenario-level wrapper
+    (:func:`_render_evidence_files`) and the per-turn path
+    (``LLMScorer._score_per_turn``) call this so the path-traversal
+    rejection and the ``</evidence_file>`` fence-neutralisation only
+    live in one place (Design Principle 9).
 
-    The returned text is empty when the scenario declares no evidence files,
-    which lets ``_build_dynamic_message`` drop the section header instead of
-    rendering an empty block.
+    Each entry is resolved relative to *source_dir*. Paths that escape
+    that directory or do not exist raise :class:`ScorerError` with the
+    offending path - never a silent skip, since the judge would then
+    score against a partial rubric without anyone noticing.
     """
-    paths = scenario.llm_scorer_evidence_files
     if not paths:
         return ""
 
-    source_dir = scenario._source_dir
     if source_dir is None:
         raise ScorerError(
-            "Scenario declares 'llm_scorer_evidence_files' but has no on-disk "
-            "source directory; load the scenario via ScenarioLoader.load_scenario "
+            "Evidence files were requested but no on-disk source directory "
+            "is available; load the scenario via ScenarioLoader.load_scenario "
             "so paths can be resolved against the scenario JSON's parent."
         )
 
@@ -201,7 +204,8 @@ def _render_evidence_files(scenario: Scenario) -> str:
             raise ScorerError(
                 f"Evidence file not found: '{relative_path}' "
                 f"(resolved to {candidate}). Check the path in "
-                "'llm_scorer_evidence_files' or create the file."
+                "'llm_scorer_evidence_files' or the per-turn override or "
+                "create the file."
             )
         try:
             content = candidate.read_text(encoding="utf-8")
@@ -215,6 +219,11 @@ def _render_evidence_files(scenario: Scenario) -> str:
         attr_path = relative_path.replace('"', "&quot;")
         rendered.append(f'<evidence_file path="{attr_path}">\n{sanitised}\n</evidence_file>')
     return "\n".join(rendered)
+
+
+def _render_evidence_files(scenario: Scenario) -> str:
+    """Scenario-level wrapper over :func:`_render_evidence_files_from`."""
+    return _render_evidence_files_from(scenario._source_dir, list(scenario.llm_scorer_evidence_files or []))
 
 
 def _judge_errored_payload(error_type: str) -> LLMPayload:
@@ -260,6 +269,46 @@ def _verdict_to_payload(verdict: JudgeVerdict, usage: dict[str, int] | None) -> 
         overall_pass=overall_pass,
         dimensions=dimensions,
         usage=usage_stats,
+    )
+
+
+def _turn_verdict_from_judge_verdict(
+    turn_idx: int,
+    verdict: JudgeVerdict,
+    usage: dict[str, Any] | None,
+) -> TurnVerdict:
+    """Convert a per-turn :class:`JudgeVerdict` into a :class:`TurnVerdict`.
+
+    Mirror of :func:`_verdict_to_payload` for the per-turn payload
+    shape. Lives at module scope (rather than as an
+    ``LLMScorer._turn_verdict_from``) so the conversion is testable
+    standalone, and so the consensus per-turn merge path can reuse it
+    when synthesising per-turn rollups from sub-judge verdicts.
+    """
+    dim_scores = verdict.dimension_scores
+    dimensions = {
+        name: LLMDimensionVerdict(score=dim.score.value, reasoning=dim.reasoning) for name, dim in dim_scores.items()
+    }
+    usage_stats = UsageStats(**usage) if usage else None
+    return TurnVerdict(turn_idx=turn_idx, dimensions=dimensions, usage=usage_stats)
+
+
+def _judge_errored_per_turn_payload(error_type: str, n_turns: int) -> PerTurnLLMPayload:
+    """Build a non-verdict ``PerTurnLLMPayload`` marking a judge infra failure.
+
+    Used when the per-turn path fails to score *every* turn (e.g. config
+    misload before the loop runs). Mirrors :func:`_judge_errored_payload`
+    so consumers that check ``payload.judge_errored`` work uniformly
+    across resolution.
+    """
+    return PerTurnLLMPayload(
+        overall_pass=False,
+        turns=[
+            TurnVerdict(turn_idx=i, dimensions={}, judge_errored=True, judge_error_type=error_type)  # type: ignore[arg-type]
+            for i in range(n_turns)
+        ],
+        judge_errored=True,
+        judge_error_type=error_type,  # type: ignore[arg-type]
     )
 
 
@@ -318,6 +367,9 @@ class LLMScorer(BaseScorer):
         cache: ScoreCache | None = None,
         skip_availability: bool = False,
         on_event: Callable[[ScoreEvent], None] | None = None,
+        *,
+        resolution: Resolution = "scenario",
+        evidence_scope: EvidenceScope = "isolated",
     ):
         self.config = config
         self.max_retries = max_retries
@@ -331,6 +383,24 @@ class LLMScorer(BaseScorer):
         self.total_completion_tokens = 0
         self.total_cost_usd: float | None = None
         self.on_event = on_event
+        # Resolution is read by :meth:`score` to dispatch between
+        # scenario-level (today's behaviour) and per-turn paths;
+        # evidence_scope is read by :meth:`_score_per_turn` to decide
+        # whether each per-turn call sees just its own turn slice
+        # (``"isolated"``, default) or all prior turns concatenated
+        # (``"cumulative"``). Both flow through from
+        # ``--scorer-config`` YAML via
+        # :class:`belt.scorer.config_schema.JudgeDef`.
+        self.resolution: Resolution = resolution
+        self.evidence_scope: EvidenceScope = evidence_scope
+        # Whether the judge was given an explicit dimension set. When
+        # False, ``.strategy`` lazily falls back to the generic
+        # whole-run dimensions (execution / trajectory / response_quality
+        # / efficiency). Those are designed to grade a whole conversation
+        # and are degenerate on a single ``isolated`` turn, so
+        # :meth:`_warn_generic_per_turn_dims` flags it once per judge.
+        self._has_explicit_strategy = strategy is not None
+        self._warned_generic_per_turn_dims = False
 
         resolved_backend, resolved_model = self._resolve()
         if not skip_availability and not resolved_backend.is_available():
@@ -389,6 +459,15 @@ class LLMScorer(BaseScorer):
         if not turn_outputs:
             return None
 
+        if self.resolution == "turn":
+            return self._score_per_turn(scenario, turn_outputs)
+        return self._score_scenario(scenario, turn_outputs)
+
+    def _score_scenario(
+        self,
+        scenario: Scenario,
+        turn_outputs: list[TurnOutput],
+    ) -> ScorerResult | None:
         scenario_label = scenario.name or "unknown"
 
         system_message = self._build_system_message()
@@ -396,7 +475,9 @@ class LLMScorer(BaseScorer):
 
         self._emit(ScoreEvent(kind="start", scenario=scenario_label))
         try:
-            verdict, usage = self._call_api(system_message, dynamic_msg, scenario_label=scenario_label)
+            verdict, usage = self._call_api(
+                system_message, dynamic_msg, scenario_label=scenario_label, strategy=self.strategy
+            )
         except JudgeInfraError as e:
             # Transient infra failure (rate-limit / timeout / network).
             # Return a verdict-less payload so (1) the pipeline appends the
@@ -441,56 +522,418 @@ class LLMScorer(BaseScorer):
         self._emit(ScoreEvent(kind="done", scenario=scenario_label, passed=payload.overall_pass))
         return ScorerResult(passed=payload.overall_pass, data=payload)
 
+    def _select_turn_window(self, turn_outputs: list[TurnOutput], current_idx: int) -> tuple[int, list[TurnOutput]]:
+        """Pick the turn slice rendered to the per-turn judge call.
+
+        Returns ``(start_idx, slice)``. ``start_idx`` lets
+        :meth:`_build_dynamic_message` render ``### Turn N`` headers
+        with the original turn indices so the judge sees scenario-
+        level numbering, never second-guessing its own slice.
+
+        ``"isolated"`` -> ``(current_idx, [t_i])`` (default; no
+        cross-turn leak).
+        ``"cumulative"`` -> ``(0, [t_0, ..., t_i])`` (prior turns
+        rendered so the judge can grade recovery / context).
+        """
+        if self.evidence_scope == "cumulative":
+            return 0, list(turn_outputs[: current_idx + 1])
+        return current_idx, [turn_outputs[current_idx]]
+
+    def _effective_strategy_for_turn(
+        self,
+        override: TurnJudgeOverride | None,
+    ) -> ScoringStrategy:
+        """Build the per-turn :class:`ScoringStrategy` honoring override dims.
+
+        ``override.extend_default_dimensions=True`` keeps the judge's
+        configured dimensions and appends the override's
+        (override-named dimensions win on collision so an author can
+        replace one dimension's rubric for a single turn without
+        re-declaring the rest). ``False`` (default) replaces the
+        dimension set entirely for that turn.
+
+        Falls back to the judge's configured strategy when the override
+        does not declare per-turn dimensions.
+        """
+        if override is None or not override.dimensions:
+            return self.strategy
+        parsed = parse_dimension_defs(override.dimensions)
+        if override.extend_default_dimensions:
+            override_names = {d.name for d in parsed}
+            base = [d for d in self.strategy.dimensions if d.name not in override_names]
+            effective_dims = base + parsed
+        else:
+            effective_dims = parsed
+        return ScoringStrategy(
+            dimensions=effective_dims,
+            agent_context=self.strategy.agent_context,
+        )
+
+    def _warn_generic_per_turn_dims(self, override: TurnJudgeOverride | None) -> None:
+        """Warn once when a turn falls back to the generic whole-run dimensions.
+
+        Fires only on actual fallback - the judge declared no dimensions
+        AND this turn supplies no per-turn ``dimensions`` override - and
+        only under ``evidence_scope="isolated"``, where the generic
+        dimensions (``trajectory`` / ``efficiency`` / ...) see a single
+        turn out of context and produce noisy ``low`` verdicts. Scoped
+        this tightly so a judge that declares per-turn rubrics (the
+        intended usage, as in the shipped per-turn example) never warns.
+        Once-per-judge to avoid per-turn log spam, mirroring
+        :meth:`belt.scorer.llm.consensus.ConsensusScorer.emit_dimension_warnings`.
+        """
+        if self._warned_generic_per_turn_dims:
+            return
+        if self._has_explicit_strategy or self.evidence_scope != "isolated":
+            return
+        if override is not None and override.dimensions:
+            return
+        self._warned_generic_per_turn_dims = True
+        logger.warning(
+            "Per-turn judge '{}' declares no dimensions, so turns without a per-turn "
+            "``dimensions`` override are scored with the generic whole-run dimensions "
+            "({}) under evidence_scope='isolated'. Those dimensions grade a whole "
+            "conversation and are noisy on a single turn. Declare a per-turn rubric in "
+            "the scenario's ``llm_judges[...].dimensions`` or in the scorer-config "
+            "judge's ``dimensions`` (see SCORING.md 2.10), or use "
+            "evidence_scope='cumulative'.",
+            self.judge_name,
+            ", ".join(self.strategy.dimension_names),
+        )
+
+    def _resolve_per_turn_override(self, scenario: Scenario, turn_idx: int) -> TurnJudgeOverride | None:
+        """Look up ``Turn.llm_judges[self.judge_name]`` for *turn_idx*.
+
+        Returns ``None`` when the turn has no override for this judge -
+        the per-turn call then runs with the judge's configured
+        dimensions, scenario-level instruction, and scenario-level
+        evidence files (same defaults as the scenario-level path).
+        """
+        if turn_idx >= len(scenario.turns):
+            return None
+        return scenario.turns[turn_idx].llm_judges.get(self.judge_name)
+
+    def _score_per_turn(
+        self,
+        scenario: Scenario,
+        turn_outputs: list[TurnOutput],
+    ) -> ScorerResult | None:
+        """Per-turn judging path.
+
+        Drives one judge call per turn (subject to per-turn overrides):
+
+        - ``override.skip=True`` -> record an empty :class:`TurnVerdict`
+          and continue. The runtime taint rule at the end catches
+          all-skipped scenarios so they never vacuously pass (preflight
+          in ``validate_per_turn_judges_against_scenarios`` catches the
+          static case; this guard is the dynamic backstop).
+        - ``override.dimensions`` builds a per-turn strategy via
+          :meth:`_effective_strategy_for_turn` so the schema sent to
+          the model matches the turn's rubric exactly.
+        - ``override.instruction`` replaces the scenario's
+          ``llm_scorer_instruction`` for this turn only; sanitised
+          through the same ``</scenario_instruction>`` neutralisation
+          as the scenario path.
+        - ``override.evidence_files`` replaces
+          ``scenario.llm_scorer_evidence_files`` for this turn only;
+          paths flow through :func:`_render_evidence_files_from` so
+          the same traversal rejection applies.
+
+        Per-turn ``JudgeInfraError`` taints just the offending turn
+        (records ``TurnVerdict.judge_errored=True``); a per-turn fatal
+        :class:`belt.errors.ScorerError` aborts the run as it does for
+        scenario-level scoring.
+        """
+        scenario_label = scenario.name or "unknown"
+        self._emit(ScoreEvent(kind="start", scenario=scenario_label))
+
+        turns_out: list[TurnVerdict] = []
+        total_prompt = 0
+        total_completion = 0
+        total_tokens_seen = False
+        any_voted = False
+        any_errored = False
+        first_error_type: str | None = None
+
+        for i, _to in enumerate(turn_outputs):
+            override = self._resolve_per_turn_override(scenario, i)
+            if override is not None and override.skip:
+                # The turn is intentionally skipped for this judge.
+                # Record the turn with empty dimensions so consumers can
+                # see WHICH turns were skipped (vs. errored vs. voted).
+                # Surfaces via :func:`_iter_per_turn_llm`'s raw["per_turn"].
+                turns_out.append(TurnVerdict(turn_idx=i, dimensions={}))
+                continue
+
+            self._warn_generic_per_turn_dims(override)
+            effective_strategy = self._effective_strategy_for_turn(override)
+            window_start, turn_window = self._select_turn_window(turn_outputs, i)
+            instruction_override = override.instruction if override and override.instruction else None
+            evidence_override = (
+                list(override.evidence_files) if override and override.evidence_files is not None else None
+            )
+
+            system_message = self._build_system_message(effective_strategy)
+            dynamic_msg = self._build_dynamic_message(
+                scenario,
+                turn_window,
+                start_idx=window_start,
+                instruction_override=instruction_override,
+                evidence_files_override=evidence_override,
+            )
+
+            try:
+                verdict, usage = self._call_api(
+                    system_message,
+                    dynamic_msg,
+                    scenario_label=scenario_label,
+                    strategy=effective_strategy,
+                    turn_idx=i,
+                )
+            except JudgeInfraError as e:
+                self._emit(ScoreEvent(kind="error", scenario=scenario_label, turn_idx=i))
+                any_errored = True
+                if first_error_type is None:
+                    first_error_type = e.error_type
+                turns_out.append(
+                    TurnVerdict(
+                        turn_idx=i,
+                        dimensions={},
+                        judge_errored=True,
+                        judge_error_type=e.error_type,  # type: ignore[arg-type]
+                    )
+                )
+                continue
+
+            if verdict is None:
+                self._emit(ScoreEvent(kind="error", scenario=scenario_label, turn_idx=i))
+                any_errored = True
+                if first_error_type is None:
+                    first_error_type = "other"
+                turns_out.append(
+                    TurnVerdict(
+                        turn_idx=i,
+                        dimensions={},
+                        judge_errored=True,
+                        judge_error_type="other",
+                    )
+                )
+                continue
+
+            for dim_name, dim_score in verdict.dimension_scores.items():
+                self._emit(
+                    ScoreEvent(
+                        kind="verdict",
+                        scenario=scenario_label,
+                        dimension=dim_name,
+                        score=dim_score.score.value,
+                        reasoning=dim_score.reasoning,
+                        turn_idx=i,
+                    )
+                )
+
+            turn_verdict = _turn_verdict_from_judge_verdict(i, verdict, usage)
+            turns_out.append(turn_verdict)
+            any_voted = True
+            if usage:
+                p = int(usage.get("prompt_tokens") or 0)
+                c = int(usage.get("completion_tokens") or 0)
+                total_prompt += p
+                total_completion += c
+                total_tokens_seen = total_tokens_seen or bool(p or c)
+
+        # Aggregate usage across turns.
+        merged_usage = (
+            UsageStats(
+                prompt_tokens=total_prompt,
+                completion_tokens=total_completion,
+                total_tokens=total_prompt + total_completion,
+            )
+            if total_tokens_seen
+            else None
+        )
+
+        # A turn whose judge errored (rate-limit / timeout / network /
+        # parse failure) was left UNJUDGED, so the scenario's verdict is
+        # incomplete. ``overall_pass`` therefore requires: at least one
+        # real verdict, NO turn errored, and no voting turn carrying a
+        # fail-level token in any dimension. ``any([])`` is False so a
+        # turn that voted with no dimensions (plugin shenanigans) still
+        # passes; the all-skipped taint below catches the degenerate
+        # "scenario had no verdicts at all" case.
+        overall_pass = (
+            any_voted
+            and not any_errored
+            and not any(
+                v.score in DEFAULT_FAIL_LEVELS
+                for turn in turns_out
+                if not turn.judge_errored
+                for v in turn.dimensions.values()
+            )
+        )
+
+        # No turn produced a real verdict: every turn was skipped and/or
+        # errored. The static preflight
+        # (``validate_per_turn_judges_against_scenarios``) normally
+        # catches a pure all-skip; this is the dynamic backstop. The
+        # first infra error type wins as the headline, falling back to
+        # ``all_turns_skipped`` for the pure all-skip case.
+        if not any_voted:
+            payload = PerTurnLLMPayload(
+                overall_pass=False,
+                turns=turns_out,
+                usage=merged_usage,
+                judge_errored=True,
+                judge_error_type=first_error_type or "all_turns_skipped",  # type: ignore[arg-type]
+            )
+            self._emit(ScoreEvent(kind="done", scenario=scenario_label, passed=False))
+            return ScorerResult(passed=False, data=payload)
+
+        # At least one turn voted. Payload-level ``judge_errored`` is the
+        # OR of every turn's flag (the documented :class:`TurnVerdict`
+        # contract): if ANY turn errored, the judgment is incomplete, so
+        # the pipeline's missing_checks machinery appends the synthetic
+        # execution check and the aggregator partitions the scenario into
+        # ``env_failed_judge`` - never a silent green, never mis-charged
+        # to agent task quality. This mirrors the scenario-level path
+        # (``_score_scenario`` -> ``_judge_errored_payload``) and the
+        # SCORING.md 2.5.1 guarantee that a flaky provider never turns
+        # into a pass.
+        payload = PerTurnLLMPayload(
+            overall_pass=overall_pass,
+            turns=turns_out,
+            usage=merged_usage,
+            judge_errored=any_errored,
+            judge_error_type=first_error_type if any_errored else None,  # type: ignore[arg-type]
+        )
+        self._emit(ScoreEvent(kind="done", scenario=scenario_label, passed=overall_pass))
+        return ScorerResult(passed=overall_pass, data=payload)
+
     def dry_run(
         self,
         scenario: Scenario,
         turn_outputs: list[TurnOutput],
     ) -> dict[str, Any]:
-        """Return the exact payload that would be sent to the LLM, without calling it."""
-        system_message = self._build_system_message()
-        dynamic_msg = self._build_dynamic_message(scenario, turn_outputs)
-        backend, clean_model = self._resolve()
-        schema = self.strategy.build_schema()
+        """Return the exact payload that would be sent to the LLM, without calling it.
 
-        return {
+        For ``resolution="turn"`` the returned dict carries a ``turns``
+        list with one entry per turn (each entry mirrors the
+        scenario-level shape, plus ``turn_idx``, ``skipped`` and the
+        override-resolved dimensions); the top-level ``resolution`` field
+        announces which shape the consumer is looking at.
+        """
+        backend, clean_model = self._resolve()
+        common = {
             "backend": backend.provider_name(),
             "model": clean_model,
             "temperature": self.config.temperature,
             "seed": self.config.seed,
             "max_tokens": self.config.max_tokens,
+            "resolution": self.resolution,
+            "evidence_scope": self.evidence_scope,
+        }
+        if self.resolution == "turn":
+            turns_preview: list[dict[str, Any]] = []
+            for i, _to in enumerate(turn_outputs):
+                override = self._resolve_per_turn_override(scenario, i)
+                if override is not None and override.skip:
+                    turns_preview.append({"turn_idx": i, "skipped": True})
+                    continue
+                effective_strategy = self._effective_strategy_for_turn(override)
+                window_start, turn_window = self._select_turn_window(turn_outputs, i)
+                instruction_override = override.instruction if override and override.instruction else None
+                evidence_override = (
+                    list(override.evidence_files) if override and override.evidence_files is not None else None
+                )
+                turns_preview.append(
+                    {
+                        "turn_idx": i,
+                        "skipped": False,
+                        "system_message": self._build_system_message(effective_strategy),
+                        "dynamic_message": self._build_dynamic_message(
+                            scenario,
+                            turn_window,
+                            start_idx=window_start,
+                            instruction_override=instruction_override,
+                            evidence_files_override=evidence_override,
+                        ),
+                        "schema": effective_strategy.build_schema(),
+                        "dimensions": effective_strategy.dimension_names,
+                    }
+                )
+            return {**common, "turns": turns_preview}
+
+        system_message = self._build_system_message(self.strategy)
+        dynamic_msg = self._build_dynamic_message(scenario, turn_outputs)
+        schema = self.strategy.build_schema()
+        return {
+            **common,
             "system_message": system_message,
             "dynamic_message": dynamic_msg,
             "schema": schema,
             "dimensions": self.strategy.dimension_names,
         }
 
-    def _build_system_message(self) -> str:
-        """Build system message from strategy: base preamble + agent context + dimension rubrics."""
+    def _build_system_message(self, strategy: ScoringStrategy | None = None) -> str:
+        """Build system message: preamble + agent context + rubric.
+
+        ``strategy`` defaults to ``self.strategy`` for the scenario-
+        level path and is overridden by :meth:`_score_per_turn` to
+        render a per-turn dimension override without mutating the
+        judge instance.
+        """
+        active = strategy or self.strategy
         parts = [_BASE_SYSTEM_PREAMBLE.strip()]
-        if self.strategy.agent_context:
-            parts.append(self.strategy.agent_context.strip())
+        if active.agent_context:
+            parts.append(active.agent_context.strip())
         parts.append("# Scoring Dimensions\n")
-        parts.append(self.strategy.build_dimensions_prompt())
+        parts.append(active.build_dimensions_prompt())
         parts.append("# Output Format\n")
         parts.append("Respond with a single JSON object matching the `JudgeVerdict` schema. No other text.")
         return "\n\n".join(parts)
 
-    def _build_dynamic_message(self, scenario: Scenario, turn_outputs: list[TurnOutput]) -> str:
+    def _build_dynamic_message(
+        self,
+        scenario: Scenario,
+        turn_outputs: list[TurnOutput],
+        *,
+        start_idx: int = 0,
+        instruction_override: str | None = None,
+        evidence_files_override: list[str] | None = None,
+    ) -> str:
+        """Render the dynamic user message.
+
+        *start_idx* lets :meth:`_score_per_turn` render a single-turn
+        ``isolated`` window with the correct ``### Turn N`` header
+        (where ``N`` is the original turn index), so per-turn numbering
+        stays consistent with the scenario-level path and the rules
+        scorer. The scenario-level path uses the default ``start_idx=0``.
+
+        *instruction_override* and *evidence_files_override* let
+        :meth:`_score_per_turn` inject per-turn overrides without
+        mutating the scenario in place. Both flow through the exact
+        same fence-neutralisation as the scenario-level path so a
+        per-turn override cannot bypass the threat model.
+        """
+        turn_pairs: list[tuple[int, TurnOutput]] = [(start_idx + i, to) for i, to in enumerate(turn_outputs)]
         scenario_text = f"```json\n{scenario.model_dump_json(indent=2)}\n```"
 
-        # Per-scenario hint authored by the scenario writer. Treated as untrusted
-        # data: fenced in a dedicated XML tag, with any nested closing fence
-        # neutralised so a hostile scenario cannot escape the fence and
-        # impersonate a system instruction. The system preamble explicitly
-        # tells the judge the fence content cannot override the rubric.
+        # Per-scenario hint authored by the scenario writer (or per-turn
+        # override). Treated as untrusted data: fenced in a dedicated
+        # XML tag, with any nested closing fence neutralised so a hostile
+        # scenario / override cannot escape the fence and impersonate a
+        # system instruction. The system preamble explicitly tells the
+        # judge the fence content cannot override the rubric.
         instruction_text = ""
-        if scenario.llm_scorer_instruction:
-            sanitised = scenario.llm_scorer_instruction.replace(
-                "</scenario_instruction>", "<!-- /scenario_instruction -->"
-            )
+        raw_instruction = instruction_override if instruction_override is not None else scenario.llm_scorer_instruction
+        if raw_instruction:
+            sanitised = raw_instruction.replace("</scenario_instruction>", "<!-- /scenario_instruction -->")
             instruction_text = f"<scenario_instruction>\n{sanitised}\n</scenario_instruction>"
 
-        evidence_text = _render_evidence_files(scenario)
+        if evidence_files_override is not None:
+            evidence_text = _render_evidence_files_from(scenario._source_dir, evidence_files_override)
+        else:
+            evidence_text = _render_evidence_files(scenario)
 
         # Default judge view: structured per-turn block built from TurnOutput
         # fields (reply, tools, metadata). For NDJSON-based agents the raw CLI
@@ -500,35 +943,29 @@ class LLMScorer(BaseScorer):
         # confabulate trajectory verdicts about phrases the agent never emitted.
         # The structured view is agent-agnostic - every adapter populates these
         # fields - and stays bounded so quality does not depend on judge size.
-        agent_output_text = "\n---\n".join(_render_structured_turn(i, to) for i, to in enumerate(turn_outputs))
+        agent_output_text = "\n---\n".join(_render_structured_turn(i, to) for i, to in turn_pairs)
 
         # Opt-in raw transcript: scenario authors who genuinely depend on the
         # full NDJSON transcript can set llm_scorer_raw_transcript=true. Lowest
         # priority (truncated first) and tail-preserving (final answer/errors
         # at the end are the most useful section to keep when truncation hits).
         if scenario.llm_scorer_raw_transcript:
-            raw_cli_text = "\n---\n".join(
-                f"### Turn {i}\n<raw_cli>\n{to.raw_cli}\n</raw_cli>" for i, to in enumerate(turn_outputs)
-            )
+            raw_cli_text = "\n---\n".join(f"### Turn {i}\n<raw_cli>\n{to.raw_cli}\n</raw_cli>" for i, to in turn_pairs)
         else:
             raw_cli_text = ""
 
         state_parts = [
-            f"### Turn {i}\n<agent_state>\n{to.raw_state}\n</agent_state>"
-            for i, to in enumerate(turn_outputs)
-            if to.raw_state
+            f"### Turn {i}\n<agent_state>\n{to.raw_state}\n</agent_state>" for i, to in turn_pairs if to.raw_state
         ]
         state_text = "\n---\n".join(state_parts) if state_parts else "(none)"
 
         diff_parts = [
-            f"### Turn {i}\n<agent_diff>\n{to.git_diff}\n</agent_diff>"
-            for i, to in enumerate(turn_outputs)
-            if to.git_diff
+            f"### Turn {i}\n<agent_diff>\n{to.git_diff}\n</agent_diff>" for i, to in turn_pairs if to.git_diff
         ]
         diff_text = "\n---\n".join(diff_parts) if diff_parts else ""
 
         workspace_chunks: list[str] = []
-        for i, to in enumerate(turn_outputs):
+        for i, to in turn_pairs:
             if not to.workspace_files:
                 continue
             files_text: list[str] = []
@@ -579,10 +1016,21 @@ class LLMScorer(BaseScorer):
         return "\n\n".join(parts)
 
     def _call_api(
-        self, system_message: str, dynamic_msg: str, scenario_label: str = ""
+        self,
+        system_message: str,
+        dynamic_msg: str,
+        scenario_label: str = "",
+        *,
+        strategy: ScoringStrategy | None = None,
+        turn_idx: int | None = None,
     ) -> tuple[JudgeVerdict | None, dict[str, Any] | None]:
         backend, clean_model = self._resolve()
-        schema = self.strategy.build_schema()
+        # Per-turn calls pass an explicit strategy so the schema sent to
+        # the model matches the per-turn rubric. ``strategy=None`` falls
+        # back to the judge's configured strategy for the scenario-level
+        # path (unchanged behaviour).
+        effective_strategy = strategy if strategy is not None else self.strategy
+        schema = effective_strategy.build_schema()
         cache_key: str | None = None
 
         if self.cache is not None:
@@ -595,7 +1043,7 @@ class LLMScorer(BaseScorer):
                     verdict = JudgeVerdict.model_validate(cached["verdict"])
                     usage = cached.get("usage", {})
                     usage["cached"] = True
-                    self._emit(ScoreEvent(kind="cache_hit", scenario=scenario_label))
+                    self._emit(ScoreEvent(kind="cache_hit", scenario=scenario_label, turn_idx=turn_idx))
                     return verdict, usage
                 except Exception:
                     pass

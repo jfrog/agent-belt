@@ -224,6 +224,52 @@ class StateExpectation(BaseModel):
     capture_git_diff: bool = False
 
 
+class TurnJudgeOverride(BaseModel):
+    """Per-turn override for an LLM judge configured at scenario / config level.
+
+    Authored inside :attr:`Turn.llm_judges` as ``{<judge_name>: <override>}``.
+    Every field is optional; an empty override (``{}``) is meaningful as a
+    "this judge runs for this turn with no override" marker (consumed by
+    the per-turn preflight to distinguish a non-mention from an explicit
+    no-op).
+
+    All fields are sized and shaped to match the scenario-level
+    equivalents so per-turn rubrics inherit the same security envelope:
+
+    - ``instruction``: capped at the same ``max_length`` as
+      :attr:`Scenario.llm_scorer_instruction`; flows through the same
+      ``</scenario_instruction>`` fence-neutralisation as the scenario
+      path (:func:`belt.scorer.llm.scorer._build_dynamic_message`).
+    - ``dimensions``: per-turn dimension list, parsed via the same
+      :func:`belt.scorer.scenario_map.parse_dimension_defs` helper as
+      the group / config path. ``list[Any]`` for parity with
+      :attr:`belt.scorer.config_schema.JudgeDef.dimensions` and the
+      runtime helper's accepted shape.
+    - ``extend_default_dimensions``: when ``True``, declared dimensions
+      extend (rather than replace) the judge's configured dimensions
+      for this turn only.
+    - ``evidence_files``: capped at the same length as
+      :attr:`Scenario.llm_scorer_evidence_files`; resolved through the
+      same path-traversal check via
+      :func:`belt.scorer.llm.scorer._render_evidence_files_from`.
+    - ``skip``: short-circuit this judge for this turn; the turn's
+      :class:`belt.scorer.payloads.TurnVerdict` is recorded with empty
+      ``dimensions``. The runtime taint rule in
+      ``LLMScorer._score_per_turn`` AND the preflight check in
+      ``validate_per_turn_judges_against_scenarios`` (both in
+      :mod:`belt.scorer.pipeline`) refuse an all-skipped judge so a
+      scenario can never vacuously pass.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    instruction: Optional[str] = Field(default=None, max_length=10_000)
+    dimensions: Optional[list[Any]] = Field(default=None, max_length=50)
+    extend_default_dimensions: bool = False
+    evidence_files: Optional[list[str]] = Field(default=None, max_length=20)
+    skip: bool = False
+
+
 class Turn(BaseModel):
     """A single conversation turn."""
 
@@ -233,6 +279,17 @@ class Turn(BaseModel):
     flags: list[str] = Field(default_factory=list, max_length=50)
     expect: TurnExpectation = Field(default_factory=TurnExpectation)
     state_expect: StateExpectation = Field(default_factory=StateExpectation)
+    # Per-turn LLM judge overrides. Keyed by judge name (matches the
+    # name declared in ``--scorer-config`` YAML, or the implicit
+    # ``"llm"`` judge name for single-judge runs). ``max_length=10``
+    # caps cost amplification: combined with ``Scenario.turns:
+    # max_length=100`` and user-supplied ``--trials N`` the worst-case
+    # per-scenario judge call count is bounded at
+    # ``100 × 10 × N``. Group-config ``llm_dimensions`` and
+    # ``llm_dimensions_extend_defaults`` apply to scenario-level judges
+    # only; per-turn judges read dimensions from the scorer config plus
+    # per-turn overrides only.
+    llm_judges: dict[str, TurnJudgeOverride] = Field(default_factory=dict, max_length=10)
 
 
 class Scenario(BaseModel):

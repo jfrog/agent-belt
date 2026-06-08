@@ -260,13 +260,17 @@ class AggregatedResults(BaseModel):
 
 # ── Lazy re-exports ──
 
-_SCENARIO_NAMES = frozenset({"GroupConfig", "Scenario", "StateExpectation", "Turn", "TurnExpectation"})
+_SCENARIO_NAMES = frozenset(
+    {"GroupConfig", "Scenario", "StateExpectation", "Turn", "TurnExpectation", "TurnJudgeOverride"}
+)
 _RUNNER_NAMES = frozenset({"AgentConfig", "ScenarioResult"})
 _SCORER_ENTITY_NAMES = frozenset(
     {
         "DimensionScore",
+        "EvidenceScope",
         "JudgeConfig",
         "JudgeVerdict",
+        "Resolution",
         "ScoreLevel",
         "ScorerResult",
     }
@@ -278,9 +282,13 @@ _SCORER_PAYLOAD_NAMES = frozenset(
         "DimensionFeedback",
         "LLMDimensionVerdict",
         "LLMPayload",
+        "PerTurnLLMPayload",
         "RulesPayload",
+        "TurnVerdict",
         "UsageStats",
         "iter_dimension_feedback",
+        "iter_llm_payloads",
+        "iter_llm_verdicts",
         "level_to_score",
         "register_payload_type",
         "registered_payload_types",
@@ -321,13 +329,16 @@ __all__ = [  # noqa: F822
     "StateExpectation",
     "Turn",
     "TurnExpectation",
+    "TurnJudgeOverride",
     # runner (re-exported via __getattr__)
     "AgentConfig",
     "ScenarioResult",
     # scorer entities (re-exported via __getattr__)
     "DimensionScore",
+    "EvidenceScope",
     "JudgeConfig",
     "JudgeVerdict",
+    "Resolution",
     "ScoreLevel",
     "ScorerResult",
     # scorer payloads (re-exported via __getattr__)
@@ -336,7 +347,9 @@ __all__ = [  # noqa: F822
     "DimensionFeedback",
     "LLMDimensionVerdict",
     "LLMPayload",
+    "PerTurnLLMPayload",
     "RulesPayload",
+    "TurnVerdict",
     "UsageStats",
     "iter_dimension_feedback",
     "level_to_score",

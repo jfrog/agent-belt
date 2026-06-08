@@ -27,6 +27,7 @@ PUBLIC_API: dict[str, str] = {
     "AgentNotAvailableError": "belt.agent.base",
     "AgentConfig": "belt.runner.entities",
     "GroupConfig": "belt.scenario",
+    "TurnJudgeOverride": "belt.scenario",
     "DimensionDef": "belt.agent.scoring",
     "ScoringStrategy": "belt.agent.scoring",
     # Strict scenario-config validation (``--strict-config``).
@@ -54,6 +55,12 @@ PUBLIC_API: dict[str, str] = {
     "BaseScorer": "belt.scorer.base",
     "BaseJudgeBackend": "belt.scorer.llm.backend",
     "ScorerResult": "belt.scorer.entities",
+    # Resolution literals for per-turn vs scenario-level LLM judging.
+    # Plugins reading ``--scorer-config`` YAML or constructing an
+    # ``LLMScorer`` directly should use these aliases instead of
+    # hard-coding the literal pair.
+    "Resolution": "belt.scorer.entities",
+    "EvidenceScope": "belt.scorer.entities",
     # Scorer payload contract (the canonical on-disk shape that
     # ``ScenarioScore.scores[name]`` carries plus the public iterator
     # any consumer should use to walk per-dimension feedback)
@@ -61,11 +68,20 @@ PUBLIC_API: dict[str, str] = {
     "RulesPayload": "belt.scorer.payloads",
     "LLMDimensionVerdict": "belt.scorer.payloads",
     "LLMPayload": "belt.scorer.payloads",
+    "PerTurnLLMPayload": "belt.scorer.payloads",
+    "TurnVerdict": "belt.scorer.payloads",
     "ConsensusMeta": "belt.scorer.payloads",
     "UsageStats": "belt.scorer.payloads",
     "ScorerPayload": "belt.scorer.payloads",
     "DimensionFeedback": "belt.scorer.payloads",
     "iter_dimension_feedback": "belt.scorer.payloads",
+    # Walk every LLM-shaped payload (LLMPayload + PerTurnLLMPayload)
+    # uniformly. Plugins that read ``ScenarioScore.scores`` should
+    # use these helpers instead of ``s.scores.get("llm")`` so a
+    # per-turn or renamed multi-judge config doesn't silently fall
+    # off their iteration path.
+    "iter_llm_payloads": "belt.scorer.payloads",
+    "iter_llm_verdicts": "belt.scorer.payloads",
     # Aggregator helpers consumed by exporter / dashboard plugins that
     # render the agent-vs-task vs judge-vs-task partition derived in
     # ``belt.aggregator.stats``. Promoted from internal to public so a
@@ -77,6 +93,13 @@ PUBLIC_API: dict[str, str] = {
     "level_to_score": "belt.scorer.payloads",
     "register_payload_type": "belt.scorer.payloads",
     "registered_payload_types": "belt.scorer.payloads",
+    # Typed ``--scorer-config`` YAML shape. Plugins that consume the
+    # parsed scorer-config (e.g. a custom orchestrator) should depend
+    # on these Pydantic models rather than untyped dicts so unknown
+    # keys, reserved-name collisions, and ``Resolution`` enum
+    # validation all stay in one place.
+    "JudgeDef": "belt.scorer.config_schema",
+    "ScorerConfigFile": "belt.scorer.config_schema",
 }
 
 __all__ = ["PUBLIC_API"]

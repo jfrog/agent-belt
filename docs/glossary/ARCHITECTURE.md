@@ -116,6 +116,10 @@ chained on `eval` / `aggregate` via `--export NAME:PATH` /
 | `ScoringStrategy` | `agent/scoring.py` | LLM judge dimensions and context |
 | `JudgeVerdict` | `scorer/entities.py` | Structured LLM judge output |
 | `JudgeConfig` | `scorer/entities.py` | LLM provider/model/temperature settings |
+| `Resolution` / `EvidenceScope` | `scorer/entities.py` | Per-judge scoring granularity literals (`scenario` / `turn`, `isolated` / `cumulative`) |
+| `TurnJudgeOverride` | `scenario.py` | Per-turn `instruction` / `dimensions` / `evidence_files` / `skip` override attached to `Turn.llm_judges[<judge_name>]` |
+| `PerTurnLLMPayload` / `TurnVerdict` | `scorer/payloads.py` | Per-turn LLM judging on-disk payload (one verdict per scenario turn, rolled up by `iter_dimension_feedback` worst-of-turns) |
+| `JudgeDef` / `ScorerConfigFile` | `scorer/config_schema.py` | Typed `--scorer-config` YAML (Pydantic `extra="forbid"`, reserved-name validator, per-judge `resolution` / `evidence_scope`) |
 
 ## 4. Layer map
 

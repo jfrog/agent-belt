@@ -48,6 +48,7 @@ from belt.scorer.pipeline import (
     load_scorer_config,
     resolve_scorer_args,
     score_scenario,
+    validate_per_turn_judges_against_scenarios,
     validate_scorers,
 )
 from belt.scorer.scenario_map import map_to_scenario, parse_dimension_defs, resolve_scoring_strategy, scenarios_root
@@ -281,6 +282,25 @@ def main(argv: list[str] | None = None, *, chained: bool = False) -> int:
         eprint(f"\n  ❌ {e}")
         return 1
 
+    # Per-turn judge preflight: walk every outcome dir's scenario JSON
+    # and cross-validate ``Turn.llm_judges`` references against the
+    # judges actually declared in ``--scorer-config``. Skipped when no
+    # per-turn judge is configured so single-judge runs pay zero cost.
+    try:
+        per_turn_scenarios = []
+        from belt.parser.scenario import ScenarioLoader
+
+        for od in outcome_dirs:
+            scen_path = map_to_scenario(od, outcomes_root)
+            try:
+                per_turn_scenarios.append(ScenarioLoader.load_scenario(scen_path))
+            except Exception as exc:
+                logger.debug("Preflight: failed to load scenario {}: {}", scen_path, exc)
+        validate_per_turn_judges_against_scenarios(scorers, per_turn_scenarios)
+    except Exception as e:
+        eprint(f"\n  ❌ {e}")
+        return 1
+
     score_cache = None if no_cache else ScoreCache(outcomes_root / ".score_cache")
     for s in llm_scorers:
         s.cache = score_cache
@@ -320,8 +340,20 @@ def main(argv: list[str] | None = None, *, chained: bool = False) -> int:
             effective_scorers = []
             for s in scorers:
                 if isinstance(s, ConsensusScorer):
+                    # Preserve per-judge resolution / evidence_scope on
+                    # rebuild so a scenario whose ``scoring_strategy``
+                    # field swaps dimensions does not silently revert to
+                    # the default scenario-level path.
                     new_judges = [
-                        LLMScorer(j.config, j.max_retries, strategy=strategy, cache=j.cache, on_event=j.on_event)
+                        LLMScorer(
+                            j.config,
+                            j.max_retries,
+                            strategy=strategy,
+                            cache=j.cache,
+                            on_event=j.on_event,
+                            resolution=j.resolution,
+                            evidence_scope=j.evidence_scope,
+                        )
                         for j in s.judges
                     ]
                     for orig, new in zip(s.judges, new_judges):
@@ -329,7 +361,15 @@ def main(argv: list[str] | None = None, *, chained: bool = False) -> int:
                     effective_scorers.append(ConsensusScorer(new_judges, strategy=s.consensus_strategy))
                 elif isinstance(s, LLMScorer):
                     effective_scorers.append(
-                        LLMScorer(s.config, s.max_retries, strategy=strategy, cache=s.cache, on_event=s.on_event)
+                        LLMScorer(
+                            s.config,
+                            s.max_retries,
+                            strategy=strategy,
+                            cache=s.cache,
+                            on_event=s.on_event,
+                            resolution=s.resolution,
+                            evidence_scope=s.evidence_scope,
+                        )
                     )
                 else:
                     effective_scorers.append(s)

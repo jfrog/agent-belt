@@ -231,6 +231,27 @@ dimensions onto the generic defaults; other layers control merge
 behaviour with their own flag (`llm_dimensions_extend_defaults` for
 the group config).
 
+### 5.2. Per-judge resolution and evidence scope (per-turn judging)
+
+Each judge in `--scorer-config` may declare:
+
+| Key | Default | Values | Effect |
+|---|---|---|---|
+| `resolution` | `scenario` | `scenario` / `turn` | `turn` runs one judge call per scenario turn with per-turn rubrics. See [SCORING.md → §2.10](SCORING.md#210-per-turn-llm-judging). |
+| `evidence_scope` | `isolated` | `isolated` / `cumulative` | For per-turn judges: `isolated` shows only the current turn; `cumulative` shows turns `[0..i]`. |
+
+Unknown values for either key reject at YAML load (Pydantic
+`Literal[...]`). Unknown YAML keys reject at load
+(`extra="forbid"`). Judge names matching `rules` or `llm` reject as
+collisions with the built-in scorer keys; the rest must match
+`^[A-Za-z0-9][A-Za-z0-9._\-]{0,63}$` for safety across CLI panels,
+GitHub markdown, JUnit attributes, and result.json keys.
+
+Per-turn judges additionally trigger a preflight pass against every
+loaded scenario - unknown `Turn.llm_judges[<name>]` keys and
+"every turn skipped" rejects with a hint listing declared judges
+before any agent or judge call happens.
+
 ## 6. Flag vs env: when to use which
 
 Every public knob falls into one of three categories. Use this rule

@@ -17,7 +17,7 @@ from __future__ import annotations
 from belt._safe import md_safe
 from belt.entities import ScenarioScore
 from belt.scorer.entities import DOWNGRADE_VERDICT_SET
-from belt.scorer.payloads import LLMPayload, RulesPayload
+from belt.scorer.payloads import RulesPayload, iter_llm_payloads, iter_llm_verdicts
 
 from . import dry_run_only_failure_count
 from .thresholds import ThresholdCheck
@@ -93,13 +93,16 @@ def build_markdown(
                         detail = f" - {md_safe(c.details)}" if c.details else ""
                         untrusted.append(f"- `rules/{md_safe(c.dimension)}` · **{md_safe(c.check)}**{detail}")
 
-            llm = s.scores.get("llm")
-            if isinstance(llm, LLMPayload):
-                for dim in sorted(llm.dimensions):
-                    verdict = llm.dimensions[dim]
-                    if verdict.score in DOWNGRADE_VERDICT_SET:
+            # Walk every LLM-shaped payload so multi-judge and per-turn
+            # downgrades both surface in the GitHub step summary. Per-
+            # judge prefix lets a reviewer attribute a downgrade to the
+            # right judge without diving into ``score.json``.
+            for name, payload in iter_llm_payloads(s):
+                prefix = "llm" if name == "llm" else f"llm[{md_safe(name)}]"
+                for dim, score_token, reasoning in iter_llm_verdicts(payload):
+                    if score_token in DOWNGRADE_VERDICT_SET:
                         untrusted.append(
-                            f"- `llm/{md_safe(dim)}` · **{md_safe(verdict.score)}** - {md_safe(verdict.reasoning)}"
+                            f"- `{prefix}/{md_safe(dim)}` · **{md_safe(score_token)}** - {md_safe(reasoning)}"
                         )
 
             if untrusted:
