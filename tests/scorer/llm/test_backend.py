@@ -97,6 +97,31 @@ class TestOpenAIBackend:
             )
             assert url == "http://localhost:11434/v1/chat/completions"
 
+    def test_build_request_default_base_includes_seed(self):
+        with patch.dict("os.environ", {"BELT_OPENAI_API_KEY": "sk-test"}, clear=True):
+            _, _, body = OpenAIBackend().build_request(
+                JudgeConfig(model="gpt-4.1", seed=2008),
+                [{"role": "system", "content": "hi"}],
+                {"type": "object"},
+            )
+            assert body["seed"] == 2008
+
+    def test_build_request_custom_base_omits_seed(self):
+        # ``seed`` is an OpenAI-proper field. OpenAI-compatible servers such as
+        # Gemini's /v1beta/openai endpoint reject unknown fields with HTTP 400,
+        # so it must not be sent to a non-default base URL.
+        env = {
+            "BELT_OPENAI_API_KEY": "sk-test",
+            "BELT_OPENAI_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            _, _, body = OpenAIBackend().build_request(
+                JudgeConfig(model="openai/gemini-2.5-flash", seed=2008),
+                [{"role": "system", "content": "hi"}],
+                {"type": "object"},
+            )
+            assert "seed" not in body
+
     def test_provider_name(self):
         assert OpenAIBackend().provider_name() == "OpenAI"
 
