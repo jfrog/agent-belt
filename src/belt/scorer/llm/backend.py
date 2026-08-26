@@ -525,12 +525,16 @@ class OpenAIBackend(BaseJudgeBackend):
             "model": config.model,
             "messages": messages,
             "temperature": config.temperature,
-            "seed": config.seed,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "JudgeVerdict", "strict": True, "schema": schema},
             },
         }
+        # ``seed`` is an OpenAI-proper field. Some OpenAI-compatible servers
+        # (notably Gemini's /v1beta/openai endpoint) reject unknown fields with
+        # HTTP 400, so only send it when talking to the canonical OpenAI host.
+        if base == self._DEFAULT_BASE_URL.rstrip("/"):
+            body["seed"] = config.seed
         _set_openai_token_limit(body, bare_model, config.max_tokens)
         return url, headers, body
 
