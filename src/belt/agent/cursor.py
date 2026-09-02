@@ -373,6 +373,9 @@ _CURSOR_TOOL_TYPE_MAP: dict[str, str] = {
     "editToolCall": "Edit",
     "listToolCall": "List",
     "searchToolCall": "Search",
+    # Subagent dispatch. Named "Task" to match Claude Code's name for the same
+    # primitive, so scenarios can assert on it uniformly across agents.
+    "taskToolCall": "Task",
 }
 
 
