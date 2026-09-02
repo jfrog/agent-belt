@@ -495,6 +495,30 @@ def _show_turn_detail(con: Console, outcome_dir: Path, turn_idx: int) -> None:
                 lines.append(f"  Error type: {turn_output.error_type}")
             lines.append("")
 
+        # Verify results (deterministic exec-test grader). Shown for both the
+        # per-turn (``verify_result``) and per-scenario (``scenario_verify_result``,
+        # on the final turn) commands so the verification detail - command,
+        # exit code, and stdout tail - is visible here in every progress mode.
+        for label, vr in (
+            ("Verify", turn_output.verify_result),
+            ("Verify (scenario)", turn_output.scenario_verify_result),
+        ):
+            if vr is None:
+                continue
+            cmd_str = " ".join(vr.cmd) or "(command)"
+            dur = f"  ({_fmt_secs(vr.duration_s)})" if vr.duration_s is not None else ""
+            icon = "[green]✅[/green]" if vr.exit_code == 0 else "[red]❌[/red]"
+            lines.append(f"[bold]{label}:[/bold] {icon}")
+            lines.append(("  $ " + cmd_str).replace("[", "\\["))
+            lines.append(f"  exit code: {vr.exit_code}{dur}")
+            tail = (vr.stdout or "").strip()
+            if tail:
+                if len(tail) > 800:
+                    tail = "…\n" + tail[-800:]
+                lines.append("  output (tail):")
+                lines.append(("  " + tail.replace("\n", "\n  ")).replace("[", "\\["))
+            lines.append("")
+
     # CLI output (truncated)
     if cli_text.strip():
         cli_preview = cli_text.strip()

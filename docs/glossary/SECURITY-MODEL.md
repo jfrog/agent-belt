@@ -138,6 +138,7 @@ mitigation and the test that pins it. `S`poofing, `T`ampering,
 | T12 | A hostile config imports an arbitrary Python module as an "agent" | T,E | dotted-path import is default-deny behind `--allow-arbitrary-agent` (same for scorer / exporter) | `TestArbitraryRegistryGating` |
 | T13 | PID reuse makes orphan cleanup delete a live run's resources | T | manifest records process create-time and compares it on liveness checks | `TestPidCreateTime`, `TestManifestHardening` |
 | T14 | World-readable artifacts leak transcripts / caches on a shared host | I | `0o077` umask plus explicit `0o700` / `0o600` on run dirs, caches, and the manifest | `TestUmask`, `TestRunDirectoryPermissions` |
+| T15 | A scenario's `verify` command executes arbitrary code on the host | E,I | default-deny `--allow-verify-exec`; runs only with an isolated worktree, through the sandbox provider, with a minimal (credential-free) env, bounded output, and a timeout | `tests/scorer/rules/test_verify.py` (`TestVerifyGate`, `TestRunVerifyCommand`) |
 
 ## 5. Control catalog by domain
 
@@ -293,6 +294,32 @@ whole tree without reaching back to `belt`.
 [`agent/base.py`](../../src/belt/agent/base.py)). **Pinned by**
 `TestManifestHardening`, `TestPidCreateTime`, `TestKillProcessTree`.
 
+### 5.11. Deterministic verify execution
+
+A scenario may declare a `verify` command (`Turn.verify` / `Scenario.verify`)
+that the runner executes after a turn / after the conversation to grade
+deterministically (e.g. run the project's test suite and assert exit 0). This
+is the one place the runner executes an author-supplied command rather than
+the agent, so it carries the full control set: default-deny behind
+`--allow-verify-exec` (the group is refused at setup otherwise), runs only
+with an isolated worktree, routes through the same `spawner` as the agent (so
+it lands inside the container under `--sandbox docker`), gets a minimal
+credential-free environment (`build_subprocess_env()` base set), captures
+stdout under a byte cap, and is bounded by a per-spec `timeout` with a
+process-group kill on expiry. `cmd` is an argv list (never a shell string);
+`output_contains` are plain substrings. Captured stdout is untrusted command
+output, so it is ANSI/OSC-stripped at capture (no terminal-escape sequence can
+reach a renderer or split a match), and on failure only a sanitized,
+length-capped tail is surfaced in the report `details`. The stored
+`verify_result` (including `cmd`, kept so the artifact is self-describing) is
+rendered through `belt view`'s existing `TurnOutput` surface, which markup-escapes
+at the sink (P8) — its stdout is already control-stripped, so no new raw sink is
+introduced. The result is scored as
+the `verify` dimension. ([`runner/orchestrator.py`](../../src/belt/runner/orchestrator.py),
+[`runner/phases/setup_groups.py`](../../src/belt/runner/phases/setup_groups.py),
+[`scorer/rules/verify.py`](../../src/belt/scorer/rules/verify.py)). **Pinned
+by** `tests/scorer/rules/test_verify.py`.
+
 ## 6. Default-deny behaviour gates
 
 Every gate that lowers a boundary is off by default and needs an
@@ -309,6 +336,7 @@ the risk framing:
 | `--allow-inplace` | Scenarios run without per-scenario worktree isolation, directly in the working directory. |
 | `--allow-external-working-dir` | A scenario's `working_dir` may resolve outside the scenarios root. |
 | `--allow-arbitrary-agent` / `-scorer` / `-exporter` | A dotted import path is loaded, executing arbitrary module code at process start. |
+| `--allow-verify-exec` | A scenario's `verify` command (an author-supplied argv) runs in the worktree. Mitigated by worktree isolation, sandbox routing, a credential-free env, output caps, and a timeout - but it is still command execution from scenario data. |
 
 Only the canonical truthy tokens (`1`, `true`, `yes`) enable a gate; a
 typo such as `TRUE` or `0` leaves it closed, so a malformed value

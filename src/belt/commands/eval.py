@@ -200,6 +200,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "Off by default - belt refuses with ConfigError."
         ),
     )
+    exe.add_argument(
+        "--allow-verify-exec",
+        action="store_true",
+        default=False,
+        help=(
+            "Permit scenarios that declare a ``verify`` command (deterministic "
+            "exec-test grading). Off by default - belt refuses such groups at "
+            "setup because verify runs an author-supplied command in the worktree. "
+            "Requires an isolated worktree."
+        ),
+    )
     exe.add_argument("--dry-run", action="store_true", help="List matching scenarios without executing")
     exe.add_argument("--no-cleanup", action="store_true", default=False, help="Skip group teardown after run")
     exe.add_argument(
@@ -488,6 +499,8 @@ def main(argv: list[str] | None = None) -> int:
         run_argv += ["--allow-inplace"]
     if getattr(args, "allow_insecure_base_url", False):
         run_argv += ["--allow-insecure-base-url"]
+    if getattr(args, "allow_verify_exec", False):
+        run_argv += ["--allow-verify-exec"]
     if getattr(args, "sandbox", None):
         run_argv += ["--sandbox", args.sandbox]
 

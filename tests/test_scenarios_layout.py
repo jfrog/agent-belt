@@ -185,3 +185,35 @@ def test_showcase_demonstrates_every_group_config_field() -> None:
         "Add the field to examples/scenarios/showcase/group-config-fields/_config.json "
         "or another existing showcase _config.json that demonstrates it."
     )
+
+
+def test_showcase_demonstrates_verify_field() -> None:
+    """`Turn.verify` and `Scenario.verify` must each be exercised by a showcase scenario.
+
+    The crawls above only cover ``expect`` / ``state_expect`` / ``_config.json``
+    keys, so the `Turn`/`Scenario`-level ``verify`` field needs its own guard -
+    otherwise the deterministic exec-test grader could ship with no worked
+    example. Mirrors the per-field coverage the other guards enforce.
+    """
+    import json
+
+    turn_verify = False
+    scenario_verify = False
+    for jf in SHOWCASE_ROOT.rglob("*.json"):
+        if jf.name == "_config.json" or jf.name.startswith("_"):
+            continue
+        data = json.loads(jf.read_text())
+        if "verify" in data:
+            scenario_verify = True
+        for turn in data.get("turns", []):
+            if "verify" in turn:
+                turn_verify = True
+
+    assert turn_verify, (
+        "No showcase scenario exercises `Turn.verify`. Add one under "
+        "examples/scenarios/showcase/verify/ that sets `verify` on a turn."
+    )
+    assert scenario_verify, (
+        "No showcase scenario exercises `Scenario.verify`. Add one under "
+        "examples/scenarios/showcase/verify/ that sets a top-level `verify`."
+    )

@@ -48,6 +48,15 @@ are internal inputs to the benchmark card; their fields are absorbed
 into the versioned card and never surface independently to external
 readers.
 
+When a scenario declares a `verify` command (see
+[SCENARIOS.md → §4.3](SCENARIOS.md#43-verify-deterministic-exec-test)),
+`turn_N_output.json` carries the captured `VerifyResult`
+(`{cmd, exit_code, stdout, duration_s}`) under `verify_result` (per-turn) and,
+on the final turn, `scenario_verify_result` (per-scenario). `cmd` is stored so
+the artifact is self-describing (a reader sees *what* ran) and every renderer
+(`belt view`, the results panel) can show the command without re-reading the
+scenario. The rule-based scorer reads these into the `verify` dimension.
+
 ### 2.1. Nested scorer payloads inside `score.json`
 
 `score.json` carries an outer `schema_version` for the `ScenarioScore`

@@ -1,0 +1,20 @@
+{
+  "name": "verify_per_scenario",
+  "description": "Per-scenario `verify` (end-of-conversation): a multi-turn conversation plays out, then the runner runs the fixture's pytest suite once at the end and asserts exit 0. Demonstrates running deterministic verification after a full user-and-agent exchange rather than after each turn. Requires --allow-verify-exec.",
+  "tags": ["showcase", "verify", "multi-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Briefly summarize what the tasktracker package does, based on the source under src/tasktracker/.",
+      "expect": {"no_errors": true, "has_reply": true}
+    },
+    {
+      "message": "Now add a short module-level docstring to src/tasktracker/storage.py describing its responsibility. Do not change behavior or any other file.",
+      "expect": {"no_errors": true, "has_reply": true}
+    }
+  ],
+  "verify": {
+    "cmd": ["python", "-m", "pytest", "-q"],
+    "exit_code": 0,
+    "output_contains": ["passed"]
+  }
+}

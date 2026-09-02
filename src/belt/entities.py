@@ -108,6 +108,22 @@ class TurnTiming(BaseModel):
     total: Optional[float] = None
 
 
+class VerifyResult(BaseModel):
+    """Outcome of a ``VerifySpec`` command executed by the runner.
+
+    Captured into :attr:`TurnOutput.verify_result` (per-turn) or
+    :attr:`TurnOutput.scenario_verify_result` (per-scenario, on the final
+    turn) so the rule-based scorer can assert on it without re-executing.
+    ``cmd`` is stored so the artifact and every renderer are self-describing
+    (a reader sees *what* was run, not just the exit code).
+    """
+
+    cmd: list[str] = Field(default_factory=list)
+    exit_code: int
+    stdout: str = ""
+    duration_s: Optional[float] = None
+
+
 class TurnOutput(BaseModel):
     """Normalized output from a single conversation turn, produced by an agent.
 
@@ -158,6 +174,14 @@ class TurnOutput(BaseModel):
     llm_turn_count: Optional[int] = None
     thinking_text: Optional[str] = None
     tool_sequence: list[str] = Field(default_factory=list)
+
+    # ── Verify results (populated by the runner when a VerifySpec is set) ──
+    # ``verify_result`` is the per-turn ``Turn.verify`` outcome; the per-scenario
+    # ``Scenario.verify`` outcome is recorded on the final turn under
+    # ``scenario_verify_result``. Distinct fields so a scenario using both on
+    # the last turn never collides. See docs/glossary/SECURITY-MODEL.md.
+    verify_result: Optional[VerifyResult] = None
+    scenario_verify_result: Optional[VerifyResult] = None
 
 
 class ScenarioScore(BaseModel):

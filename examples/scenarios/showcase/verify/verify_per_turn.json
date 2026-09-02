@@ -1,0 +1,19 @@
+{
+  "name": "verify_per_turn",
+  "description": "Per-turn `verify`: after the agent edits the project, the runner runs the fixture's own pytest suite in the worktree and asserts it exits 0 (the rules/verify dimension). Demonstrates deterministic exec-test grading - a green check means the test suite actually passed, not merely that the reply looked right. Requires --allow-verify-exec.",
+  "tags": ["showcase", "verify", "single-turn", "real-runnable"],
+  "turns": [
+    {
+      "message": "Add a concise module-level docstring to src/tasktracker/formatters.py describing what the module does. Do not change any code behavior and do not edit any other file.",
+      "expect": {
+        "no_errors": true,
+        "has_reply": true
+      },
+      "verify": {
+        "cmd": ["python", "-m", "pytest", "-q"],
+        "exit_code": 0,
+        "output_contains": ["passed"]
+      }
+    }
+  ]
+}

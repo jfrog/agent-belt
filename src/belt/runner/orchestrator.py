@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
+import time
 import traceback
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
@@ -25,6 +27,7 @@ from belt import envvars
 from belt._git import run_git
 from belt._io import write_json
 from belt._redact import safe_agent_args
+from belt._sanitize import strip_ansi
 from belt.agent.error_types import UNKNOWN
 from belt.constants import (
     RUNTIME_INFO_FILE,
@@ -35,14 +38,14 @@ from belt.constants import (
     TURN_STATE_TEMPLATE,
     TURN_STREAM_TEMPLATE,
 )
-from belt.entities import TurnOutput
+from belt.entities import TurnOutput, VerifyResult
 from belt.errors import ScenarioError
 from belt.parser.ndjson import bounded_json_loads
 from belt.runner.entities import AgentConfig, ScenarioResult
 from belt.runner.process.spawner import LocalSpawner, SandboxedSpawner, SubprocessRunner
 from belt.runner.sandbox import BaseSandboxProvider, SandboxHandle, get_sandbox_provider
 from belt.runner.sandbox.base import SandboxContext
-from belt.scenario import GroupConfig, SandboxProfile, Scenario, StateExpectation
+from belt.scenario import GroupConfig, SandboxProfile, Scenario, StateExpectation, VerifySpec
 
 if TYPE_CHECKING:
     from belt.agent.base import BaseAgentAdapter
@@ -379,6 +382,15 @@ def run_scenario_turns(
             if isolated_ws is not None and workspace_manager is not None:
                 _capture_git_state(turn_output, workspace_manager, isolated_ws)
 
+            # Per-turn ``verify``: run the author-declared command in the
+            # worktree after capture. Skipped when the agent errored on this
+            # turn (the worktree state is meaningless) -> the scorer emits a
+            # skipped (passed=None) check rather than a false fail. The setup
+            # gate already enforced --allow-verify-exec + worktree presence.
+            if turn.verify is not None and isolated_ws is not None and not turn_output.has_error:
+                logger.info("  turn {}: verify -> {}", i, " ".join(turn.verify.cmd))
+                turn_output.verify_result = _run_verify_command(turn.verify, spawner, ws)
+
             # Record the finalized turn output (post-capture, so any later
             # ``{{prev.git_diff}}`` or ``{{prev.tool_sequence}}`` reference
             # picks up the populated fields).
@@ -398,6 +410,22 @@ def run_scenario_turns(
                 parts.append(f"${turn_output.cost_usd:.4f}")
             logger.info("    captured: {}", ", ".join(parts))
             completed += 1
+
+        # Per-scenario ``verify`` (end-of-conversation): run once after every
+        # turn completed, while the worktree still exists. Recorded on the
+        # final turn's output under ``scenario_verify_result`` (re-written so
+        # the on-disk artifact carries it). Skipped if the conversation did
+        # not run to completion (an early break leaves stale workspace state).
+        if (
+            scenario.verify is not None
+            and isolated_ws is not None
+            and completed == len(scenario.turns)
+            and turn_outputs_so_far
+        ):
+            logger.info("  scenario verify -> {}", " ".join(scenario.verify.cmd))
+            last_output = turn_outputs_so_far[-1]
+            last_output.scenario_verify_result = _run_verify_command(scenario.verify, spawner, ws)
+            _write_turn_artifacts(outcome_dir, completed - 1, last_output)
     finally:
         try:
             meta = agent.metadata()
@@ -456,6 +484,78 @@ def _capture_git_state(
         turn_output.files_modified = files_modified
     except Exception as e:
         logger.warning("Failed to capture git state from worktree: {}", e)
+
+
+# Byte cap on captured ``verify`` stdout. A hostile or runaway test command
+# could otherwise emit unbounded output and OOM the runner; the cap bounds
+# resident memory regardless of how chatty the command is.
+_VERIFY_STDOUT_CAP_BYTES = 1 * 1024 * 1024
+
+
+def _run_verify_command(spec: VerifySpec, spawner: SubprocessRunner, workspace: Path) -> VerifyResult:
+    """Execute a ``VerifySpec`` command in ``workspace`` and capture the result.
+
+    Runs through ``spawner`` so the command lands inside the active sandbox
+    (the docker provider mounts only the worktree; the host provider runs it
+    in ``workspace`` directly). The environment is the minimal base set with
+    NO provider credentials - a verify command is a test runner, not the
+    agent, so it has no business seeing API keys. stdout is captured under a
+    byte cap, the command is bounded by ``spec.timeout``, and a timeout kills
+    the whole process group. Never raises: any failure to spawn collapses to
+    a non-zero ``exit_code`` so scoring always has a deterministic result.
+    """
+    from belt.agent.base import _kill_process_tree, build_subprocess_env
+
+    env = build_subprocess_env()
+    start = time.monotonic()
+    try:
+        proc = spawner.popen(
+            list(spec.cmd),
+            cwd=str(workspace),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+    except Exception as e:  # noqa: BLE001 - report any spawn failure as a non-zero verify result
+        logger.warning("verify command failed to start: {}", e)
+        return VerifyResult(
+            cmd=list(spec.cmd), exit_code=127, stdout=f"verify command failed to start: {e}", duration_s=0.0
+        )
+
+    # ``communicate(timeout=...)`` reads stdout AND enforces the deadline in one
+    # call - reading the pipe to EOF first would block past the timeout. On a
+    # timeout we kill the whole process group and drain what was buffered.
+    # Captured stdout is untrusted command output, so it is ANSI/OSC-stripped at
+    # capture (``strip_ansi``) before storage - a terminal-escape sequence can
+    # never reach a future renderer or split an ``output_contains`` match - then
+    # truncated to the byte cap so the stored / scored output stays bounded.
+    # (Same posture as ``_capture_cli_version``; newlines are preserved so
+    # multi-line test output stays readable.)
+    try:
+        stdout, _ = proc.communicate(timeout=spec.timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(proc)
+        try:
+            stdout, _ = proc.communicate(timeout=5)
+        except Exception:  # noqa: BLE001 - best-effort drain after kill
+            stdout = ""
+        capped = strip_ansi(stdout or "")[:_VERIFY_STDOUT_CAP_BYTES]
+        return VerifyResult(
+            cmd=list(spec.cmd),
+            exit_code=124,
+            stdout=capped + f"\n...[verify timed out after {spec.timeout}s]",
+            duration_s=time.monotonic() - start,
+        )
+
+    rc = proc.returncode if proc.returncode is not None else 1
+    return VerifyResult(
+        cmd=list(spec.cmd),
+        exit_code=rc,
+        stdout=strip_ansi(stdout or "")[:_VERIFY_STDOUT_CAP_BYTES],
+        duration_s=time.monotonic() - start,
+    )
 
 
 def _safe_resolve(workspace: Path, rel_path: str) -> Path | None:

@@ -212,6 +212,17 @@ def _add_common_run_args(parser: argparse.ArgumentParser) -> None:
             f"{envvars.ALLOW_INSECURE_BASE_URL}=1."
         ),
     )
+    exe.add_argument(
+        "--allow-verify-exec",
+        action="store_true",
+        default=False,
+        help=(
+            "Permit scenarios that declare a ``verify`` command (deterministic "
+            "exec-test grading). Off by default - belt refuses such groups at "
+            "setup because verify runs an author-supplied command in the worktree. "
+            f"Same effect as setting {envvars.ALLOW_VERIFY_EXEC}=1."
+        ),
+    )
     exe.add_argument("--dry-run", action="store_true", help="List matching scenarios without executing")
     exe.add_argument(
         "--no-cleanup", action="store_true", default=False, help="Skip group teardown after run (default: clean up)"
