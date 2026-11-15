@@ -32,7 +32,19 @@ jobs:
         id: parse
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#v}"
+          RAW_VERSION="${TAG#v}"
+          # Normalise to canonical PEP 440 (e.g. ``0.3.0-rc1`` -> ``0.3.0rc1``,
+          # ``0.1.0-alpha.1`` -> ``0.1.0a1``). This value feeds
+          # ``SETUPTOOLS_SCM_PRETEND_VERSION`` in the build job, which hatch-vcs
+          # writes verbatim into ``belt.__version__`` while the wheel filename
+          # is always normalised. Passing the raw dash-form made
+          # ``make verify-wheel`` fail its ``__version__ == wheel version``
+          # check on every dash-separated pre-release tag. ``Version()`` also
+          # rejects tags that are not valid PEP 440, failing fast before build.
+          python3 -m venv /tmp/pep440
+          /tmp/pep440/bin/pip install --quiet "packaging==24.2"
+          VERSION=$(/tmp/pep440/bin/python -c "import sys; from packaging.version import Version; print(Version(sys.argv[1]))" "$RAW_VERSION")
+          echo "Tag: $TAG -> version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           # PEP 440 pre-release / dev-release markers - any of these ship to
           # TestPyPI only. We accept both spellings:
