@@ -445,7 +445,18 @@ judges:
     temperature: 0.0
     dimensions: [safety, responsible_disclosure]
     system_preamble: "Assess security-sensitive topics."
+  newer_claude:
+    model: anthropic/claude-sonnet-5-5
+    temperature: null          # omit it; Sonnet 5.5 rejects sampling params
+    output_mode: json_schema   # structured outputs; Sonnet 5.5 rejects a forced tool_choice
+    dimensions: [factual_accuracy]
 ```
+
+`output_mode` applies to Anthropic judges only. `tool` (the default)
+forces a `judge_verdict` tool call. `json_schema` sends
+`output_config.format` instead and reads the verdict from the text
+reply. Use it for models that reject a forced `tool_choice`, such as
+Sonnet 5.5. `temperature: null` leaves the field out of the request.
 
 ```bash
 belt eval scenarios/ --scorer-config judges.yaml --modes llm

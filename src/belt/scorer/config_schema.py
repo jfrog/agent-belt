@@ -76,6 +76,8 @@ class JudgeDef(BaseModel):
     temperature: Optional[float] = Field(default=None, ge=0, le=1)
     seed: Optional[int] = None
     max_tokens: Optional[int] = Field(default=None, ge=1)
+    # Mirrors :attr:`belt.scorer.entities.JudgeConfig.output_mode`.
+    output_mode: Optional[Literal["tool", "json_schema"]] = None
     # Bounded: a runaway ``max_retries=1_000_000`` against a 429-prone
     # backend would amplify cost without bound. Caps the per-call retry
     # budget at 20 which exceeds the SOTA exponential-backoff default

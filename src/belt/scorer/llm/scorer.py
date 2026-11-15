@@ -1221,16 +1221,25 @@ class LLMScorer(BaseScorer):
         if not isinstance(content, list):
             logger.error("Anthropic response missing 'content' list")
             return None, usage
-        for block in content:
-            if not isinstance(block, dict):
-                continue
+        stop_reason = data.get("stop_reason")
+        if stop_reason in ("refusal", "max_tokens"):
+            # The verdict is cut off or missing: a refusal stops the reply,
+            # and max_tokens truncates it (thinking tokens count too).
+            logger.error("Anthropic judge stopped early (stop_reason={}); no verdict", stop_reason)
+            return None, usage
+        blocks = [b for b in content if isinstance(b, dict)]
+        for block in blocks:
             if block.get("type") == "tool_use" and block.get("name") == "judge_verdict":
                 raw = block.get("input")
                 if not isinstance(raw, dict):
                     logger.error("Anthropic tool_use 'input' is not a dict")
                     return None, usage
                 return JudgeVerdict.model_validate(raw), usage
-        logger.error("Anthropic response missing tool_use block for judge_verdict")
+        # ``output_mode="json_schema"``: the verdict is the JSON text reply.
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+        if text.strip():
+            return JudgeVerdict.model_validate_json(text), usage
+        logger.error("Anthropic response has no judge_verdict tool_use block and no text block")
         return None, usage
 
     @staticmethod

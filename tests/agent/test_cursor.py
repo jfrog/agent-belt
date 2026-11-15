@@ -427,6 +427,40 @@ class TestFetchResults:
         assert len(to.tool_calls) == 1
         assert to.tool_calls[0].name == "Grep"
 
+    def test_parses_cursor_task_tool_call(self, agent: CursorAgentAdapter):
+        """A subagent dispatch must surface as a named ``Task`` call.
+
+        Left unnamed, the empty name makes ``_render_cursor_tool`` drop the
+        event from the live stream and leaves every ``tools_invoked`` /
+        ``tool_args_contain`` check unable to observe the dispatch.
+        """
+        events = json.dumps(
+            {
+                "type": "tool_call",
+                "subtype": "started",
+                "call_id": "tc-5",
+                "tool_call": {
+                    "taskToolCall": {
+                        "args": {
+                            "description": "Plan the implementation",
+                            "prompt": "Read requirements.md and produce a plan",
+                        }
+                    }
+                },
+            }
+        )
+        to = agent.fetch_results(events)
+        assert len(to.tool_calls) == 1
+        assert to.tool_calls[0].name == "Task"
+        assert to.tool_calls[0].args == {
+            "description": "Plan the implementation",
+            "prompt": "Read requirements.md and produce a plan",
+        }
+
+    def test_unknown_tool_call_subtype_stays_unnamed(self, agent: CursorAgentAdapter):
+        """Unmapped subtype keys must keep returning an empty name."""
+        assert _extract_cursor_tool({"someFutureToolCall": {"args": {"x": 1}}}) == ("", {})
+
     def test_skips_completed_duplicates(self, agent: CursorAgentAdapter):
         """Only 'started' events should produce tool calls, not both started+completed."""
         events = "\n".join(

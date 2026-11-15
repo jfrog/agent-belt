@@ -234,6 +234,34 @@ class TestAnthropicBackend:
     def test_provider_name(self):
         assert AnthropicBackend().provider_name() == "Anthropic"
 
+    def test_default_mode_sends_no_structured_output_fields(self):
+        with patch.dict("os.environ", {"BELT_ANTHROPIC_API_KEY": "sk-ant-test"}, clear=True):
+            _, headers, body = AnthropicBackend().build_request(
+                JudgeConfig(model="claude-sonnet-4-6"), [{"role": "user", "content": "hi"}], {"type": "object"}
+            )
+            assert "output_config" not in body
+            assert "x-gateway-structured-output" not in headers
+
+    def test_json_schema_mode_sends_output_config_and_no_tools(self):
+        schema = {"type": "object", "properties": {"overall_pass": {"type": "boolean"}}}
+        with patch.dict("os.environ", {"BELT_ANTHROPIC_API_KEY": "sk-ant-test"}, clear=True):
+            _, headers, body = AnthropicBackend().build_request(
+                JudgeConfig(model="claude-sonnet-5-5", output_mode="json_schema"),
+                [{"role": "user", "content": "hi"}],
+                schema,
+            )
+            assert body["output_config"] == {"format": {"type": "json_schema", "schema": schema}}
+            assert "tools" not in body
+            assert "tool_choice" not in body
+            assert headers["x-gateway-structured-output"] == "on"
+
+    def test_temperature_none_is_not_sent(self):
+        with patch.dict("os.environ", {"BELT_ANTHROPIC_API_KEY": "sk-ant-test"}, clear=True):
+            _, _, body = AnthropicBackend().build_request(
+                JudgeConfig(model="claude-sonnet-5-5", temperature=None), [{"role": "user", "content": "hi"}], {}
+            )
+            assert "temperature" not in body
+
 
 # ── resolve_backend ──
 
@@ -760,3 +788,31 @@ class TestPreflightAuthRetry:
             backend.preflight_model(config, timeout=5)
 
         assert call_count[0] == 2
+
+
+class TestTemperatureNoneOmitted:
+    """``temperature=None`` leaves the field out so the provider default applies."""
+
+    def test_openai(self):
+        with patch.dict("os.environ", {"BELT_OPENAI_API_KEY": "sk-test"}, clear=True):
+            _, _, body = OpenAIBackend().build_request(
+                JudgeConfig(model="openai/gpt-4.1", temperature=None), [{"role": "user", "content": "hi"}], {}
+            )
+            assert "temperature" not in body
+
+    def test_ollama(self):
+        _, _, body = OllamaBackend().build_request(
+            JudgeConfig(model="ollama/gemma4", temperature=None), [{"role": "user", "content": "hi"}], {}
+        )
+        assert "temperature" not in body["options"]
+
+    def test_azure(self):
+        env = {
+            "BELT_AZURE_OPENAI_ENDPOINT": "https://x.openai.azure.com",
+            "BELT_AZURE_OPENAI_API_KEY": "my-key",
+        }
+        with patch.dict("os.environ", env):
+            _, _, body = AzureBackend().build_request(
+                JudgeConfig(model="gpt-4.1-deploy", temperature=None), [{"role": "user", "content": "hi"}], {}
+            )
+            assert "temperature" not in body
