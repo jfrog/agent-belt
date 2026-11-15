@@ -58,6 +58,8 @@ def build_judge_config_from_scorer_args(scorer_args: dict[str, str]) -> JudgeCon
         overrides["seed"] = int(scorer_args["seed"])
     if "max_tokens" in scorer_args:
         overrides["max_tokens"] = int(scorer_args["max_tokens"])
+    if "output_mode" in scorer_args:
+        overrides["output_mode"] = scorer_args["output_mode"]
     if "max_prompt_chars" in scorer_args:
         overrides["max_prompt_chars"] = int(scorer_args["max_prompt_chars"])
 
@@ -137,12 +139,16 @@ def build_scorers(
                 overrides: dict[str, object] = {}
                 if jdef.model is not None:
                     overrides["model"] = jdef.model
-                if jdef.temperature is not None:
+                # An explicit ``temperature: null`` is kept: it omits the
+                # field from the request (models that reject sampling params).
+                if "temperature" in jdef.model_fields_set:
                     overrides["temperature"] = jdef.temperature
                 if jdef.seed is not None:
                     overrides["seed"] = jdef.seed
                 if jdef.max_tokens is not None:
                     overrides["max_tokens"] = jdef.max_tokens
+                if jdef.output_mode is not None:
+                    overrides["output_mode"] = jdef.output_mode
                 if jdef.max_prompt_chars is not None:
                     overrides["max_prompt_chars"] = jdef.max_prompt_chars
                 if jdef.cost_per_prompt_token is not None:

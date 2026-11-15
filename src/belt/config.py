@@ -146,6 +146,7 @@ def _collect_judge_kwargs(
                 "temperature",
                 "seed",
                 "max_tokens",
+                "output_mode",
                 "provider",
                 "cost_per_prompt_token",
                 "cost_per_completion_token",
@@ -177,7 +178,9 @@ def _collect_judge_kwargs(
 
     if cli_overrides:
         for key, val in cli_overrides.items():
-            if val is not None:
+            # An explicit ``temperature: None`` means "omit it from the
+            # request", so it must survive the merge.
+            if val is not None or key == "temperature":
                 kwargs[key] = val
                 sources[key] = "cli"
 
