@@ -67,8 +67,8 @@ asserts every `BELT_*` literal in `src/` is declared there.
 | `BELT_LLM_PREFLIGHT_TIMEOUT` | Per-probe timeout (seconds) for the judge model preflight that `belt eval` runs before spawning the agent phase. Increase on satellite links / heavily proxied environments; lower on tight CI to fail faster. | `10` |
 | `BELT_PRICING_FILE` | Path to a TOML file overriding the bundled judge-cost pricing table. The override **fully replaces** the bundled table (it is not merged) so an invalid or partial file fails loudly at import. Schema mirrors [`src/belt/scorer/llm/pricing.toml`](../../src/belt/scorer/llm/pricing.toml): `[models."<name>"]` rows with `input_per_token`, `output_per_token`, and optional `valid_from` / `source_url` provenance, plus an optional `[aliases]` table. Use this to ship enterprise-negotiated rates or to add models released after the bundled table's `valid_from`. | unset (use bundled) |
 
-Model parameters (`temperature`, `seed`, `max_tokens`, `max_prompt_chars`)
-are per-judge settings and live in `belt.yaml` or `judges.yaml`,
+Model parameters (`temperature`, `seed`, `max_tokens`, `max_prompt_chars`,
+`output_mode`) are per-judge settings and live in `belt.yaml` or `judges.yaml`,
 not env vars.
 
 ### 3.2. LLM provider credentials
@@ -202,7 +202,7 @@ toward the filesystem root to find it.
 # belt.yaml
 llm:
   model: openai/gpt-5.4-mini   # required when --modes llm; provider prefix mandatory
-  # temperature, seed, max_tokens, max_prompt_chars: optional per-judge knobs
+  # temperature, seed, max_tokens, max_prompt_chars, output_mode: optional per-judge knobs
 ```
 
 For multiple LLM judges with different configurations, use a dedicated

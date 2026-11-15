@@ -84,6 +84,7 @@ LLM_SCORER_OPTIONS = [
     ScorerOption(name="temperature", help="Sampling temperature", default="0.0"),
     ScorerOption(name="seed", help="Sampling seed", default="2008"),
     ScorerOption(name="max_tokens", help="Max response tokens", default="4096"),
+    ScorerOption(name="output_mode", help="Anthropic verdict format: tool or json_schema", default="tool"),
     ScorerOption(name="max_prompt_chars", help="Max chars for dynamic message (~4 chars/token)", default="100000"),
     ScorerOption(name="no_cache", help="Disable response cache", default="false"),
     ScorerOption(name="max_retries", help="Max retries on 429", default="5"),
@@ -176,7 +177,7 @@ def main(argv: list[str] | None = None, *, chained: bool = False) -> int:
         epilog="Note: --scenarios filters scenarios during `belt run` and `belt eval`. "
         "The score command operates on all outcomes in the --run-dir directory.\n\n"
         "Scorer-specific options are passed via --scorer-arg KEY=VALUE. "
-        "Available LLM scorer options: model, temperature, seed, max_tokens, no_cache, max_retries.",
+        "Available LLM scorer options: model, temperature, seed, max_tokens, output_mode, no_cache, max_retries.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )

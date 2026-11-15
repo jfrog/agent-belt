@@ -189,9 +189,23 @@ class JudgeConfig(BaseModel):
             "``llm.model`` in ``belt.yaml``."
         ),
     )
-    temperature: float = Field(default=0.0, ge=0, le=1)
+    temperature: Optional[float] = Field(
+        default=0.0,
+        ge=0,
+        le=1,
+        description="Sampling temperature. ``None`` omits it so the provider default applies "
+        "(newer Anthropic models such as Sonnet 5.5 reject non-default sampling parameters).",
+    )
     seed: int = Field(default=2008, description="Sampling seed (OpenAI/Azure only; ignored by Anthropic)")
     max_tokens: int = Field(default=4096)
+    output_mode: Literal["tool", "json_schema"] = Field(
+        default="tool",
+        description=(
+            "Anthropic only. ``tool`` forces a ``judge_verdict`` tool call. ``json_schema`` sends "
+            "``output_config.format`` (structured outputs) for models that reject a forced "
+            "``tool_choice``, such as Sonnet 5.5."
+        ),
+    )
     max_prompt_chars: int = Field(
         default=100_000,
         description=(

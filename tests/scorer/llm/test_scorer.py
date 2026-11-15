@@ -1290,3 +1290,50 @@ class TestJudgeRetryWithBearer:
         assert len(captured_headers) == 1
         assert captured_headers[0].get("Authorization") == "Bearer jwt-token"
         assert "x-api-key" not in captured_headers[0]
+
+
+class TestParseAnthropicStructuredOutput:
+    """Verdict parsing for the ``json_schema`` output mode (text block, no tool call)."""
+
+    @staticmethod
+    def _parse(data: dict):
+        from belt.scorer.llm.scorer import LLMScorer
+
+        return LLMScorer._parse_anthropic_verdict(data, None)
+
+    def test_reads_verdict_from_text_block(self):
+        data = {
+            "content": [{"type": "text", "text": '{"overall_pass": true}'}],
+            "stop_reason": "end_turn",
+        }
+        verdict, _ = self._parse(data)
+        assert verdict is not None
+        assert verdict.overall_pass is True
+
+    def test_tool_use_block_still_wins(self):
+        data = {
+            "content": [{"type": "tool_use", "name": "judge_verdict", "input": {"overall_pass": False}}],
+            "stop_reason": "tool_use",
+        }
+        verdict, _ = self._parse(data)
+        assert verdict is not None
+        assert verdict.overall_pass is False
+
+    @pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens"])
+    def test_incomplete_stop_reason_returns_no_verdict(self, stop_reason):
+        import io
+
+        from loguru import logger
+
+        data = {
+            "content": [{"type": "text", "text": '{"overall_pass": tr'}],
+            "stop_reason": stop_reason,
+        }
+        buf = io.StringIO()
+        sink = logger.add(buf, level="ERROR", format="{message}")
+        try:
+            verdict, _ = self._parse(data)
+        finally:
+            logger.remove(sink)
+        assert verdict is None
+        assert f"stop_reason={stop_reason}" in buf.getvalue()

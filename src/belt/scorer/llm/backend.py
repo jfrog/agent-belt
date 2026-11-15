@@ -524,13 +524,13 @@ class OpenAIBackend(BaseJudgeBackend):
         body: dict[str, Any] = {
             "model": config.model,
             "messages": messages,
-            "temperature": config.temperature,
             "seed": config.seed,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "JudgeVerdict", "strict": True, "schema": schema},
             },
         }
+        _set_temperature(body, config)
         _set_openai_token_limit(body, bare_model, config.max_tokens)
         return url, headers, body
 
@@ -685,13 +685,13 @@ class AzureBackend(BaseJudgeBackend):
 
         body: dict[str, Any] = {
             "messages": messages,
-            "temperature": config.temperature,
             "seed": config.seed,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "JudgeVerdict", "strict": True, "schema": schema},
             },
         }
+        _set_temperature(body, config)
         # Azure deployment names are arbitrary, but new-family OpenAI models
         # routed through Azure also reject ``max_tokens``. Use the same
         # heuristic as direct-OpenAI - a deployment whose alias contains the
@@ -710,9 +710,12 @@ class AzureBackend(BaseJudgeBackend):
 class AnthropicBackend(BaseJudgeBackend):
     """Backend for Anthropic's Messages API.
 
-    Uses tool_use for structured output (Anthropic doesn't support json_schema
-    response_format). Converts the schema into a tool definition, forces the
-    model to call it, and extracts the JSON from the tool call result.
+    ``output_mode="tool"`` (default) converts the schema into a tool
+    definition, forces the model to call it, and reads the verdict from the
+    tool call. ``output_mode="json_schema"`` sends the schema as
+    ``output_config.format`` (structured outputs) instead, for models that
+    reject a forced ``tool_choice`` such as Sonnet 5.5, and reads the verdict
+    from the text block.
 
     Env vars (all prefixed BELT_):
         BELT_ANTHROPIC_API_KEY - required
@@ -797,17 +800,21 @@ class AnthropicBackend(BaseJudgeBackend):
         user_parts = [m["content"] for m in messages if m["role"] != "system"]
         user_text = "\n\n".join(user_parts) if user_parts else "Please evaluate."
 
-        tool_schema = _schema_to_anthropic_tool(schema)
-
         body: dict[str, Any] = {
             "model": config.model,
             "max_tokens": config.max_tokens,
-            "temperature": config.temperature,
             "system": system_text,
             "messages": [{"role": "user", "content": user_text}],
-            "tools": [tool_schema],
-            "tool_choice": {"type": "tool", "name": "judge_verdict"},
         }
+        _set_temperature(body, config)
+        if config.output_mode == "json_schema":
+            body["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
+            # The JFrog LLM gateway forwards ``output_config.format`` to the
+            # model only when this header is set; other endpoints ignore it.
+            headers["x-gateway-structured-output"] = "on"
+        else:
+            body["tools"] = [_schema_to_anthropic_tool(schema)]
+            body["tool_choice"] = {"type": "tool", "name": "judge_verdict"}
         return url, headers, body
 
 
@@ -908,12 +915,16 @@ class OllamaBackend(BaseJudgeBackend):
             "messages": messages,
             "stream": False,
             "format": schema,
-            "options": {
-                "temperature": config.temperature,
-                "seed": config.seed,
-            },
+            "options": {"seed": config.seed},
         }
+        _set_temperature(body["options"], config)
         return url, headers, body
+
+
+def _set_temperature(target: dict[str, Any], config: JudgeConfig) -> None:
+    """Set ``temperature`` unless it is ``None``, so the provider default applies."""
+    if config.temperature is not None:
+        target["temperature"] = config.temperature
 
 
 def _schema_to_anthropic_tool(schema: dict) -> dict:
