@@ -181,12 +181,12 @@ jobs:
           path: dist/
 
       - name: Publish to TestPyPI
-        # v1.12+ ships a twine that understands Metadata-Version 2.4, which is
-        # what current ``hatchling`` emits (PEP 639 license metadata). v1.11
-        # rejects the wheel before upload with "Metadata is missing required
-        # fields: Name, Version" - misleading symptom, real cause is the
-        # metadata version. v1.12+ also keeps PEP 740 attestation support.
-        uses: pypa/gh-action-pypi-publish@v1.14.0
+        # v1.14.2+ ships twine 7, which understands Metadata-Version 2.5,
+        # which is what current ``hatchling`` emits. v1.14.0 rejects the wheel
+        # before upload with "InvalidDistribution: Invalid distribution
+        # metadata: '2.5' is not a ...". Older versions failed the same way on
+        # 2.4. v1.14.3 also keeps PEP 740 attestation support.
+        uses: pypa/gh-action-pypi-publish@v1.14.3
         with:
           repository-url: https://test.pypi.org/legacy/
           # TestPyPI rejects identical version overwrites; ``skip-existing``
@@ -215,7 +215,7 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.14.0
+        uses: pypa/gh-action-pypi-publish@v1.14.3
 
   github-release:
     name: GitHub Release (notes + provenance)
