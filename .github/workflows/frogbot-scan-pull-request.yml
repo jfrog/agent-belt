@@ -30,7 +30,12 @@ jobs:
         with:
           python-version: "3.13"
 
-      - uses: jfrog/frogbot@17efdfdbb49cb4ea05a9ac58bb29483763a0f5b9 # v2.35.1
+      - uses: jfrog/frogbot@b521695f6cce0ffb639163db14cc498db9274b95 # v3.8.3
+        with:
+          # Pin the binary too. The action defaults to ``latest``, which let
+          # Frogbot 2.36.0 float in under a v2.35.1 action pin and fail on
+          # ``uv.lock`` ("uv is supported only for 'jf curation-audit'").
+          version: "3.8.3"
         env:
           JF_URL: ${{ secrets.FROGBOT_URL }}
           JF_ACCESS_TOKEN: ${{ secrets.FROGBOT_ACCESS_TOKEN }}
